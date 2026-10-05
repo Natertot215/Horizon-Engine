@@ -291,7 +291,7 @@ function fail(msg) {
 const CLOUD_TYPES = {
   cumulus: { Cover: 0.42, Dens: 1, Alt: 1.4, Thick: 1.6, Scale: 3.2, Billow: 0.85, Cells: 0, Streak: 0, Detail: 0.7, Soft: 0.2 },
   stratocumulus: { Cover: 0.62, Dens: 0.9, Alt: 1.2, Thick: 0.8, Scale: 4, Billow: 0.5, Cells: 0.3, Streak: 0.12, Detail: 0.5, Soft: 0.3 },
-  altocumulus: { Cover: 0.55, Dens: 0.8, Alt: 4, Thick: 0.45, Scale: 1.6, Billow: 0.3, Cells: 0.85, Streak: 0.2, Detail: 0.4, Soft: 0.25 },
+  altocumulus: { Cover: 0.55, Dens: 0.8, Alt: 4, Thick: 0.3, Scale: 1.6, Billow: 0.3, Cells: 0.85, Streak: 0.2, Detail: 0.4, Soft: 0.25 },
   cirrus: { Cover: 0.45, Dens: 0.35, Alt: 9, Thick: 0.35, Scale: 6, Billow: 0, Cells: 0, Streak: 0.85, Detail: 0.3, Soft: 0.8 },
   overcast: { Cover: 0.92, Dens: 0.8, Alt: 1, Thick: 1.1, Scale: 8, Billow: 0.2, Cells: 0, Streak: 0.1, Detail: 0.35, Soft: 0.6 },
   veil: { Cover: 0.85, Dens: 0.12, Alt: 8, Thick: 0.4, Scale: 10, Billow: 0, Cells: 0, Streak: 0.4, Detail: 0.1, Soft: 1 },
@@ -457,15 +457,15 @@ const PRESETS = [
     starDensity: 0.7, starDepth: 0.85, starBright: 1.6, starSize: 0.75, starColor: 0.3,
     ...LAKE, surfColorA: '#0d1424', surfColorB: '#0d1424', surfWaves: 0.2,
     land: 3, landHeight: 1.7, landLayers: 2, landColor: '#11131b', forestMix: 1, forestDensity: 0.95,
-    peak: 7, peakHeading: 205, peakWidth: 16, peakSnow: 0.42,
+    peak: 7.5, peakHeading: 205, peakWidth: 24, peakSnow: 0.42,
     fog: 0.5, fogHeight: 15, fogGlow: 0.8, fogColor: '#c3c6e8', haze: 0.45,
     ev: 0.3, tone: 1, contrast: 1.05, saturation: 1.1,
   } },
   { name: 'Ember Dusk', p: {
     sunElev: -1.2, sunHeading: 250, heading: 245, pitch: 16, fov: 75,
-    ...cloudLayer(1, 'altocumulus', { Cover: 0.55, Dens: 0.9, Alt: 4.5, Thick: 0.6, Scale: 0.9, Cells: 0.9 }),
+    ...cloudLayer(1, 'altocumulus', { Cover: 0.55, Dens: 0.9, Alt: 4.5, Thick: 0.32, Scale: 0.9, Cells: 0.9 }),
     cGlow: 1.8, cLightTint: '#ff5a2a', cLightAmt: 0.45, cShadowTint: '#1d2440', cShadowAmt: 0.6,
-    ...LAKE, surfWaves: 0.15, land: 4, landHeight: 4, landLayers: 1, cityLights: 0.35, landColor: '#0e1016',
+    ...LAKE, surfWaves: 0.15, land: 4, landHeight: 2, landLayers: 2, landDepth: 1.6, landHeading: 245, cityLights: 0.5, landColor: '#0e1016',
     ev: -0.4, tone: 2, temp: 0.25, contrast: 1.2, saturation: 1.05,
   } },
   { name: 'Veiled Night', p: {
@@ -497,7 +497,7 @@ const PRESETS = [
   } },
   { name: 'Fire Sky', p: {
     sunElev: -1.2, sunHeading: 262, heading: 250, pitch: 14, fov: 84,
-    ...cloudLayer(1, 'altocumulus', { Cover: 0.66, Dens: 0.8, Alt: 4.5, Thick: 0.7, Scale: 1.3, Billow: 0.4, Cells: 0.65, Streak: 0.15, Detail: 0.5, Soft: 0.3 }),
+    ...cloudLayer(1, 'altocumulus', { Cover: 0.66, Dens: 0.8, Alt: 4.5, Thick: 0.4, Scale: 1.3, Billow: 0.4, Cells: 0.65, Streak: 0.15, Detail: 0.5, Soft: 0.3 }),
     ...cloudLayer(2, 'cirrus', { Cover: 0.4, Dens: 0.3 }),
     cGlow: 2, cLightTint: '#ff4a1a', cLightAmt: 0.4, cShadowTint: '#3a2a6a', cShadowAmt: 0.5,
     surfWaves: 0.12, land: 1, landHeight: 1.6, landLayers: 2, landColor: '#0e0f16',
@@ -1501,11 +1501,12 @@ float cloudDensity(int i, vec3 pw, float hf, float rate, bool detailed) {
   // Flat bases and domed tops for heaped clouds, lens shapes for thin layers: only the strongest
   // part of the field reaches the top and bottom, so puffs are rounded rather than extruded. Edges
   // soften with the pixel footprint instead of breaking into blocks.
-  float prof = mix(4.0 * hf * (1.0 - hf), smoothstep(0.0, 0.1, hf) * (1.0 - hf * hf), puff);
-  float lo = 1.0 - f.y + (1.0 - prof) * (0.4 - 0.18 * soft);
+  float top = max(hf - 0.2, 0.0) / 0.8;
+  float prof = mix(4.0 * hf * (1.0 - hf), smoothstep(0.0, 0.1, hf) * (1.0 - top * top), puff);
+  float lo = 1.0 - f.y + (1.0 - prof) * mix(0.4 - 0.18 * soft, 0.3, puff);
   float d = remap(f.x, lo, lo + 0.06 + 0.3 * soft + min(rate * 2.0, 0.3));
   if (d <= 0.0) return 0.0;
-  d = d * d * (3.0 - 2.0 * d);
+  d = mix(d * d * (3.0 - 2.0 * d), sqrt(d), puff);
   if (detailed && uCloudC[i].x > 0.0) {
     float ds = uCloudB[i].x * 0.16;
     vec3 dq = vec3(pw.x + uCloudD[i].z, pw.y, pw.z + uCloudD[i].w) / ds + vec3(0.0, uCloudC[i].z * 2.0, 0.0);
@@ -1592,9 +1593,6 @@ vec4 clouds(vec3 d, float fp, float jitter, vec3 amb) {
 `;
 
 const GLSL_LAND = `
-const float LAND_DIST[4] = float[4](1.0, 2.6, 6.5, 16.0);
-const float LAND_SCALE[4] = float[4](1.0, 1.35, 1.6, 1.25);
-
 vec3 horizonSky(vec3 d) {
   vec3 h = normalize(vec3(d.x, 0.006, d.z) + vec3(1e-5, 0.0, 0.0));
   return physicalSky(h) + nightSky(h) * uNightScale;
@@ -1634,179 +1632,301 @@ vec3 applyFog(vec3 c, vec3 d, float dist, vec3 amb) {
   return mix(c, fc, f);
 }
 
-// ── Silhouettes ──
+// ── Far land: hills, mountains, forest and city in 3D ──
 
-float ridgeNoise(float a, float freq, float seed, float rate) {
-  vec2 c = vec2(cos(a), sin(a)) * (freq * 0.06);
-  return nz(vec3(c, seed * 0.173) + 0.5, rate * freq * 0.06).r;
+// The land starts at the shoreline (Distance) and runs past the horizon. Hills and mountains are
+// eroded heightfields whose height grows with distance, so range rises behind range; a forest is a
+// canopy of individual trees on low swells; a city is a grid of towers traced lot by lot. Distant
+// land sinks with the Earth's curvature and fades into the air.
+
+const float EARTH_R = 6371000.0;
+const float CITY_G = 64.0;
+const mat2 LAND_ROT = mat2(0.8, 0.6, -0.6, 0.8);
+
+float landNear() { return 1000.0 * uLandB.x; }
+float landFar() { return landNear() * (uLand.x > 3.5 ? 3.0 + 2.5 * uLand.w : 8.0 + 14.0 * uLand.w); }
+float curveDrop(float r) { return r * r / (2.0 * EARTH_R); }
+
+float hashL(vec2 c) {
+  uvec2 q = uvec2(ivec2(c) + 1048576);
+  return float(pcg(q.x ^ pcg(q.y ^ uint(uLandB.z * 977.0)))) * (1.0 / 4294967296.0);
 }
 
-struct Ridge { float h; float hb; float cell; float u; float top; };
-
-Ridge ridgeAt(int L, float az, float fp) {
-  float a = az + uLandB.y + float(L) * 1.7;
-  float seed = uLandB.z + float(L) * 2.31;
-  float type = uLand.x, rough = uLand.z;
-  Ridge r = Ridge(0.0, 0.0, 0.0, 0.0, 0.0);
-  float h;
-  if (type < 1.5) {
-    h = smoothstep(0.2, 0.85, ridgeNoise(a, 2.0, seed, fp) * 0.65 + ridgeNoise(a, 6.0, seed + 0.4, fp) * 0.35);
-    h *= 0.8 + 0.2 * rough * ridgeNoise(a, 40.0, seed + 0.9, fp);
-  } else if (type < 2.5) {
-    float r1 = 1.0 - abs(ridgeNoise(a, 2.5, seed, fp) * 2.0 - 1.0);
-    float r2 = 1.0 - abs(ridgeNoise(a, 8.0, seed + 0.4, fp) * 2.0 - 1.0);
-    float r3 = 1.0 - abs(ridgeNoise(a, 26.0, seed + 0.8, fp) * 2.0 - 1.0);
-    h = r1 * r1 * 0.6 + r2 * r2 * (0.25 + 0.15 * rough) + r3 * 0.15 * rough;
-  } else if (type < 3.5) {
-    // Rolling ground under the forest; the trees themselves come from forestCover.
-    h = smoothstep(0.25, 0.9, ridgeNoise(a, 3.0, seed, fp)) * 0.3;
-  } else {
-    float N = 48.0 * LAND_DIST[L];
-    float x = a * N, ci = floor(x), f = fract(x);
-    uint hh = hash3u(uvec3(uint(int(ci) + 1000000), uint(L), 29u));
-    float downtown = smoothstep(0.35, 0.8, ridgeNoise(a, 1.6, seed, fp));
-    float bh = (0.22 + 0.78 * pow(rnd(hh), 1.8)) * (0.4 + 0.6 * downtown);
-    if (rnd(hh) > 0.92 && abs(f - 0.5) < 0.08) bh *= 1.35;
-    bh = mix(bh, 0.3 * (0.35 + 0.65 * downtown), smoothstep(0.5, 2.0, fp * N));
-    r.cell = ci;
-    r.u = f;
-    h = bh;
-  }
-  r.hb = h * uLand.y * DEG * LAND_SCALE[L];
-  if (L == 1 && uPeak.x > 0.0) {
-    float dz = abs(wrapAngle(az - uPeak.y)) / max(uPeak.z, 1e-3);
-    float p = pow(max(0.0, 1.0 - dz), 1.7) * (uPeak.x / max(uLand.y, 0.01)) / LAND_SCALE[1];
-    p = min(p, (uPeak.x / max(uLand.y, 0.01)) / LAND_SCALE[1] * 0.965);
-    if (p > h) { h = p; r.top = 1.0; }
-  }
-  r.h = h * uLand.y * DEG * LAND_SCALE[L];
-  return r;
+// Value noise in [-1, 1] and its gradient.
+vec3 noised(vec2 x) {
+  vec2 i = floor(x), f = fract(x);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+  float a = hashL(i), b = hashL(i + vec2(1.0, 0.0)), c = hashL(i + vec2(0.0, 1.0)), e = hashL(i + vec2(1.0, 1.0));
+  float k = a - b - c + e;
+  return vec3(2.0 * (a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y) - 1.0, 2.0 * du * (vec2(b - a, c - a) + k * u.yx));
 }
 
-// Forest: individual trees standing on the base ground of layer L. Returns coverage; n is a
-// pseudo-normal in (right, up, toward viewer) and tone a per-tree brightness. Trees smaller than
-// a few pixels merge into a soft canopy line.
-float forestCover(int L, float az, float el, float baseH, float fp, out vec3 n, out float tone) {
-  float hT = uLand.y * DEG * LAND_SCALE[L] * 0.62, cw = hT * 0.22;
-  float a = az + uLandB.y + float(L) * 1.7, ci = floor(a / cw);
-  float lod = smoothstep(2.5, 7.0, hT / fp);
-  float cover = clamp((baseH + 0.62 * hT - el) / fp + 0.5, 0.0, 1.0) * (1.0 - lod);
-  n = vec3(0.0, 0.35, 0.94);
-  tone = 1.0;
-  if (lod <= 0.0) return cover;
-  for (int k = -2; k <= 2; k++) {
-    float c = ci + float(k);
-    uint h = hash3u(uvec3(uint(int(c) + 1000000), uint(L), 77u + uint(uLandB.z * 10.0)));
-    if (rnd(h) > uLandC.w) continue;
-    float ac = (c + 0.1 + 0.8 * rnd(h)) * cw;
-    float ht = hT * (0.55 + 0.45 * rnd(h)) * (0.7 + 0.6 * valueNoise(vec2(c * 0.07, float(L) * 3.1 + uLandB.z)));
-    float X = (a - ac) / ht, Y = (el - baseH) / ht + 0.1;
-    if (Y < 0.0 || Y > 1.2 || abs(X) > 0.6) continue;
-    float sd;
-    vec3 nn;
-    if (rnd(h) < uLandC.z) {
-      // Conifer spire with ragged branch tiers.
-      float tier = fract(Y * (7.0 + 4.0 * rnd(h)) + rnd(h));
-      float rw = 0.19 * pow(max(1.0 - Y, 0.0), 0.88) * (0.68 + 0.32 * (1.0 - tier)) * (0.85 + 0.3 * rnd(h));
-      rw *= 0.9 + 0.2 * valueNoise(vec2(Y * 30.0, c));
-      sd = Y > 1.0 ? length(vec2(X, Y - 1.0)) : abs(X) - rw;
-      float u = clamp(X / max(rw, 1e-3), -1.0, 1.0);
-      nn = vec3(u * 0.85, 0.3 + 0.3 * tier, sqrt(max(1.0 - u * u, 0.0)) * 0.6);
-    } else {
-      // Broadleaf: three lobes over a short trunk.
-      sd = max(abs(X) - 0.025, abs(Y - 0.2) - 0.2);
-      nn = vec3(0.0, 0.2, 1.0);
-      for (int j = 0; j < 3; j++) {
-        float fj = float(j);
-        vec2 cc = vec2((fj - 1.0) * 0.2 * (0.8 + 0.4 * rnd(h)), 0.64 - abs(fj - 1.0) * 0.12 + 0.06 * rnd(h));
-        float rr = (j == 1 ? 0.3 : 0.24) * (0.85 + 0.3 * rnd(h));
-        vec2 dq = vec2(X, Y) - cc;
-        float dj = length(dq) - rr * (0.9 + 0.2 * valueNoise(vec2(atan(dq.y, dq.x) * 3.0, c + fj)));
-        if (dj < sd) { sd = dj; vec2 u2 = dq / rr; nn = vec3(u2 * 0.9, sqrt(max(1.0 - dot(u2, u2), 0.0))); }
+// Eroded relief: each octave is damped where the slopes so far are steep, so ridges stay sharp and
+// valleys smooth. Returns (height, gradient) in feature units.
+vec3 relief(vec2 p, int oct, float erode) {
+  float a = 0.0, b = 0.5;
+  vec2 d = vec2(0.0), g = vec2(0.0);
+  mat2 m = mat2(1.0);
+  for (int i = 0; i < 10; i++) {
+    if (i >= oct) break;
+    vec3 n = noised(p);
+    d += n.yz;
+    float w = 1.0 / (1.0 + erode * dot(d, d));
+    a += b * w * n.x;
+    g += b * w * (n.yz * m);
+    b *= 0.5;
+    p = 2.0 * (LAND_ROT * p);
+    m = 2.0 * (LAND_ROT * m);
+  }
+  return vec3(a, g);
+}
+
+float gCanopy = 0.0;  // height within the tree last sampled (0 at its foot, 1 at its tip)
+float gPeak = 0.0;    // 1 where the last sample was the volcano
+
+// Trees on a jittered 10 m grid, conifer cones or broadleaf domes by Mix and Density. Once a tree
+// is smaller than a pixel the canopy turns into its average height.
+float canopy(vec2 p, float px, inout vec2 g) {
+  const float cs = 10.0, Ht = 22.0;
+  float far = smoothstep(2.5, 7.0, px);
+  gCanopy = 0.75;
+  if (far >= 1.0) return Ht * 0.7 * uLandC.w;
+  vec2 c = floor(p / cs), bg = vec2(0.0);
+  float best = 0.0;
+  for (int j = -1; j <= 1; j++)
+    for (int i = -1; i <= 1; i++) {
+      vec2 cc = c + vec2(float(i), float(j));
+      if (hashL(cc * 1.7 + 3.1) > uLandC.w) continue;
+      vec2 pos = (cc + 0.15 + 0.7 * vec2(hashL(cc + 11.3), hashL(cc * 0.37 + 5.7))) * cs;
+      float ht = Ht * (0.55 + 0.6 * hashL(cc + 23.9));
+      bool con = hashL(cc + 41.0) < uLandC.z;
+      float rad = ht * (con ? 0.21 : 0.36);
+      vec2 dv = p - pos;
+      float dd = length(dv);
+      if (dd >= rad) continue;
+      float v;
+      vec2 gv;
+      if (con) { v = ht * (1.0 - dd / rad); gv = -ht / rad * dv / max(dd, 1e-3); }
+      else { float s = sqrt(rad * rad - dd * dd); v = ht * 0.45 + s * 1.3; gv = -1.3 * dv / max(s, 0.3); }
+      if (v > best) { best = v; bg = gv; gCanopy = clamp(v / ht, 0.0, 1.0); }
+    }
+  g += bg * (1.0 - far);
+  return mix(best, Ht * 0.7 * uLandC.w, far);
+}
+
+// Land height (m) above the base plane at p (metres from the eye) and its gradient g. Octaves finer
+// than the footprint px are left out.
+float landHeight(vec2 p, float px, out vec2 g) {
+  float r = length(p), type = uLand.x;
+  float L = type < 1.5 ? 1700.0 : type < 2.5 ? 2600.0 : 1500.0;
+  float A = tan(uLand.y * DEG) * clamp(r - 0.4 * landNear(), 0.6 * landNear(), 30000.0) * (type < 1.5 ? 1.3 : type < 2.5 ? 1.8 : 0.45);
+  int oct = int(clamp(log2(L / max(px, 1.0)), 2.0, type < 2.5 ? 9.0 : 5.0));
+  vec2 q = rot2(p, uLandB.y) / L + uLandB.z * vec2(0.71, 1.37);
+  vec3 n = relief(q, oct, type < 1.5 ? 0.35 : type < 2.5 ? 0.6 + 1.4 * uLand.z : 0.2);
+  float v = n.x + 0.42;
+  float h = A * max(v, 0.0);
+  g = v > 0.0 ? A * rot2(n.yz, -uLandB.y) / L : vec2(0.0);
+  if (type > 2.5) h += canopy(p, px, g);
+  gPeak = 0.0;
+  if (uPeak.x > 0.0) {
+    // A stratovolcano: concave flanks scored by radial gullies, a flat crater rim on top.
+    float Dp = landNear() * 14.0;
+    vec2 dv = p - vec2(sin(uPeak.y), cos(uPeak.y)) * Dp;
+    float R = Dp * tan(min(uPeak.z, 1.3)), Hp = Dp * tan(uPeak.x * DEG);
+    float rr = length(dv) / R;
+    if (rr < 1.0) {
+      float prof = pow(1.0 - rr, 1.9);
+      float hp = Hp * min(prof, 0.955) * (1.0 + 0.04 * rr * (valueNoise(vec2(atan(dv.y, dv.x) * 22.0, rr * 4.0 + uLandB.z)) - 0.5));
+      if (hp > h) {
+        h = hp;
+        gPeak = 1.0;
+        g = prof < 0.955 ? -1.9 * Hp * pow(1.0 - rr, 0.9) / R * dv / max(length(dv), 1e-3) : vec2(0.0);
       }
     }
-    float cv = clamp(0.5 - sd * ht / fp, 0.0, 1.0) * lod;
-    if (cv > cover) { cover = cv; n = normalize(nn); tone = 0.7 + 0.6 * rnd(h); }
   }
-  return cover;
+  float shore = smoothstep(landNear(), landNear() * 1.5, r);
+  g *= shore;
+  return h * shore;
 }
 
-// Relief for a mountain face below its ridge: gullies and spurs from a ridged noise field over
-// (azimuth, elevation). Returns the world normal; v is the field value for snow and rock streaks.
-vec3 faceRelief(int L, vec3 d, float az, float el, float fp, out float v) {
-  float km = LAND_DIST[L] * uLandB.x;
-  float a = az + uLandB.y + float(L) * 1.7;
-  vec3 o = vec3(0.31, 0.17, uLandB.z * 0.173 + float(L) * 0.41);
-  // Features scale with the range's apparent height (about 0.4 of it across), stretched down the
-  // fall line so gullies run vertically. The noise has 8 features per texture unit.
-  vec2 g = vec2(0.0);
-  float K = 1.0 / (3.2 * uLand.y * DEG * LAND_SCALE[L]), amp = 1.0, tot = 0.0;
-  v = 0.0;
-  for (int i = 0; i < 2; i++) {
-    vec3 p = vec3(cos(a) * K, sin(a) * K, el * K * 0.5) + o;
-    vec3 ta = vec3(-sin(a), cos(a), 0.0) * 0.012, te = vec3(0.0, 0.0, 0.012);
-    float r = fp * K;
-    float f0 = 1.0 - abs(nz(p, r).a * 2.0 - 1.0);
-    float fa = 1.0 - abs(nz(p + ta, r).a * 2.0 - 1.0);
-    float fe = 1.0 - abs(nz(p + te, r).a * 2.0 - 1.0);
-    g += vec2(fa - f0, (fe - f0) * 0.5) / 0.12 * amp;
-    v += f0 * amp;
-    tot += amp;
-    amp *= 0.45;
-    K *= 3.3;
-    o += vec3(1.7, 0.9, 2.3);
-  }
-  v /= tot;
-  vec3 hd = normalize(vec3(d.x, 0.0, d.z) + 1e-5), right = vec3(hd.z, 0.0, -hd.x);
-  float k = 0.9 + 0.8 * uLand.z;
-  return normalize(-hd * 0.75 + vec3(0.0, 0.45, 0.0) - right * g.x * k + vec3(0.0, 1.0, 0.0) * (v - 0.5) * 0.9 - vec3(0.0, g.y, 0.0) * 0.3 * k);
+// Where a ray leaves the shoreline circle (the eye is inside it).
+float shoreEntry(vec3 ro, vec3 rd) {
+  vec2 o = ro.xz, v = rd.xz;
+  float vv = max(dot(v, v), 1e-10), b = dot(o, v), c = dot(o, o) - landNear() * landNear();
+  return c < 0.0 ? (-b + sqrt(max(b * b - vv * c, 0.0))) / vv : 0.0;
 }
 
-vec3 shadeLand(int L, vec3 d, float az, float el, Ridge rg, vec3 amb, float fp, float tree, vec3 tn, float tone) {
-  float km = LAND_DIST[L] * uLandB.x;
-  vec3 nrm = normalize(vec3(-d.x, 0.9, -d.z));
-  vec3 albedo = uLandColor;
-  vec3 emit = vec3(0.0);
-  vec3 hd = normalize(vec3(d.x, 0.0, d.z) + 1e-5), right = vec3(hd.z, 0.0, -hd.x);
-  if (uLand.x > 0.5 && uLand.x < 2.5 && rg.top < 0.5) {
-    float v;
-    nrm = faceRelief(L, d, az, el, fp, v);
-    float rel = el / max(rg.h, 1e-4);
-    albedo *= (0.8 + 0.4 * v) * (0.95 + 0.05 * sin(el / max(rg.h, 1e-4) * 40.0 + v * 6.0));
-    // Snow holds above the snow line on gentler ground; cliffs and gully walls stay rock.
-    float snow = smoothstep(-0.08, 0.12, rel + (v - 0.5) * 0.6 - (1.0 - uLandC.x)) * smoothstep(0.3, 0.52, nrm.y) * step(0.001, uLandC.x);
-    albedo = mix(albedo, vec3(0.8, 0.83, 0.9), snow);
-  } else if (uLand.x > 2.5 && uLand.x < 3.5 && tree > 0.0) {
-    nrm = normalize(right * tn.x + vec3(0.0, tn.y, 0.0) - hd * tn.z);
-    albedo *= tone;
+// Distance along the ray to the hills, mountains or forest, or -1.
+float landTrace(vec3 ro, vec3 rd, float fp) {
+  float far = landFar(), t = shoreEntry(ro, rd), kStep = uLand.x > 1.5 && uLand.x < 2.5 ? 0.4 : 0.5;
+  // Tree cones are steep: step finely only inside the canopy band (trees stand at most 26 m).
+  float band = uLand.x > 2.5 ? 26.0 : 0.0;
+  // The steepest apparent slope anything can reach: a ray climbing faster, above it, is clear.
+  float top = tan(uLand.y * DEG) * 1.6 + (uPeak.x > 0.0 ? tan(uPeak.x * DEG) : 0.0);
+  float tPrev = t, dPrev = 1e9;
+  for (int i = 0; i < 300; i++) {
+    vec3 p = ro + rd * t;
+    float r = length(p.xz);
+    if (r > far) break;
+    vec2 g;
+    float dy = p.y - (landHeight(p.xz, fp * t, g) - uSurf.y - curveDrop(r));
+    if (dy < 0.3 * fp * t) return dPrev < 1e8 ? mix(tPrev, t, clamp(dPrev / max(dPrev - dy, 1e-6), 0.0, 1.0)) : t;
+    if (rd.y > top && p.y + uSurf.y > top * r + 40.0) break;
+    tPrev = t;
+    dPrev = dy;
+    t += max(dy > band ? (dy - band) * kStep + band * 0.2 : dy * 0.2, fp * t + 0.5);
   }
-  if (rg.top > 0.5) {
-    float rel = el / max(rg.h, 1e-4);
-    float side = wrapAngle(az - uPeak.y);
-    vec3 face = normalize(vec3(-d.x, 0.0, -d.z) * 0.8 + vec3(0.0, 0.6, 0.0) + normalize(cross(vec3(0.0, 1.0, 0.0), d) + 1e-5) * sign(side) * 0.7);
-    float gully = nz(vec3(side * 9.0 / max(uPeak.z, 0.01), 0.27, 0.43), fp * 9.0 / max(uPeak.z, 0.01)).r;
-    float snow = smoothstep(1.0 - uPeak.w - 0.04, 1.0 - uPeak.w + 0.04, rel + (gully - 0.5) * 0.35);
-    albedo = mix(albedo, vec3(0.86, 0.88, 0.95), snow);
-    nrm = face;
+  return -1.0;
+}
+
+// Rock, meadow, forest and snow by height and slope; the volcano's ash, forest skirt and gullied
+// snow cap; soft shadows cast by the land itself.
+vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
+  vec3 p = ro + rd * t;
+  float r = length(p.xz), type = uLand.x;
+  vec2 g;
+  float h = landHeight(p.xz, fp * t * 0.35, g);
+  vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
+  float n1 = valueNoise(p.xz / 90.0 + uLandB.z), n2 = valueNoise(p.xz / 17.0 - uLandB.z);
+  // Rock in strata that follow the height, darker on the steepest faces.
+  float strata = valueNoise(vec2(h / 23.0 + n1 * 2.0, 0.5));
+  vec3 alb = uLandColor * (0.62 + 0.3 * n1 + 0.18 * n2 + 0.25 * strata) * mix(0.75, 1.0, smoothstep(0.35, 0.75, n.y));
+  vec3 forest = vec3(0.022, 0.04, 0.018) * (0.7 + 0.6 * n2), meadow = vec3(0.07, 0.09, 0.035) * (0.8 + 0.4 * n1);
+  float snowLine = mix(2600.0, 120.0, uLandC.x);
+  float ao = 1.0;
+  if (gPeak > 0.5) {
+    float Hp = landNear() * 14.0 * tan(uPeak.x * DEG), e = h / max(Hp, 1.0);
+    float gully = valueNoise(vec2(atan(p.z - cos(uPeak.y) * landNear() * 14.0, p.x - sin(uPeak.y) * landNear() * 14.0) * 40.0, e * 6.0));
+    alb = mix(vec3(0.09, 0.08, 0.075), vec3(0.16, 0.13, 0.11), n1) * (0.8 + 0.4 * n2);
+    alb = mix(alb, forest, smoothstep(0.32, 0.18, e + 0.08 * n1));
+    float snow = smoothstep(1.0 - uPeak.w - 0.03, 1.0 - uPeak.w + 0.03, e + (gully - 0.5) * 0.22);
+    alb = mix(alb, vec3(0.84, 0.86, 0.9), snow);
+  } else if (type > 2.5) {
+    // Forest: darker deep in each crown, a little lighter and warmer at the tips.
+    alb = mix(forest, uLandColor * 0.5, 0.15) * (0.75 + 0.5 * hashL(floor(p.xz / 10.0)));
+    ao = mix(0.35, 1.0, gCanopy);
+  } else {
+    // Forest on gentle ground below the tree line, meadow in clearings, snow above the snow line.
+    float veg = smoothstep(0.66, 0.86, n.y + 0.1 * n2) * (1.0 - smoothstep(0.55, 0.8, h / snowLine + 0.15 * n1));
+    alb = mix(alb, mix(meadow, forest, smoothstep(0.3, 0.5, n1 + 0.3 * n2)), veg);
+    float snow = smoothstep(-60.0, 60.0, h - snowLine + (n1 - 0.5) * 250.0) * smoothstep(0.45, 0.7, n.y + 0.15 * n2) * step(0.001, uLandC.x);
+    alb = mix(alb, vec3(0.83, 0.86, 0.91), snow);
   }
-  if (uLand.x > 3.5 && uLandB.w > 0.0) {
-    float floorAng = 0.0035 / km;
-    float row = floor(el / floorAng), col = floor(rg.u * 7.0);
-    uint hh = hash3u(uvec3(uint(int(rg.cell) + 1000000), uint(row + 4096.0), uint(col) + uint(L) * 16u));
-    vec2 cellUV = vec2(fract(rg.u * 7.0), fract(el / floorAng));
-    float win = step(0.25, cellUV.x) * step(cellUV.x, 0.75) * step(0.3, cellUV.y) * step(cellUV.y, 0.8);
-    float lit = step(rnd(hh), uLandB.w * 0.6) * mix(0.55, 1.0, rnd(hh));
-    float lod = smoothstep(1.0, 3.0, fp / floorAng);
-    emit = uCityColor * mix(win * lit, uLandB.w * 0.6 * 0.25 * 0.78, lod) * 2.5 * uNightScale;
+  float sh = 1.0;
+  if (uSunDir.y > -0.04) {
+    float s = 15.0 + 0.003 * t;
+    for (int k = 0; k < 22; k++) {
+      vec3 q = p + uSunDir * s;
+      float rq = length(q.xz);
+      vec2 gq;
+      float yq = landHeight(q.xz, fp * t + s * 0.03, gq) - uSurf.y - curveDrop(rq);
+      sh = min(sh, clamp(25.0 * (q.y - yq) / s, 0.0, 1.0));
+      s *= 1.4;
+      if (sh < 0.02 || q.y > 9000.0) break;
+    }
   }
-  vec3 c = albedo * (directLight(nrm) + amb * 0.85) + emit;
-  if (uLand.x > 2.5 && uLand.x < 3.5) {
-    // Backlit foliage glows at the rim of each crown.
-    float rim = pow(max(dot(d, uSunDir), 0.0), 6.0) * (1.0 - abs(tn.z)) * tree;
-    c += albedo * vec3(1.1, 1.3, 0.6) * uSunScale * transmittance(OBS, uSunDir.y) * rim * 0.5;
+  vec3 c = alb * (directLight(n) * sh * ao + amb * ao * (0.45 + 0.55 * n.y));
+  vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
+  c = c * tr + horizonSky(rd) * (1.0 - tr);
+  return applyFog(c, rd, t, amb);
+}
+
+// ── City ──
+
+// The building on lot c: (centre, height, id). Avenues every sixth row and column; a downtown of
+// towers out along the land heading, low-rise blocks elsewhere.
+vec4 cityLot(vec2 c, out vec2 hs) {
+  vec2 cen = (c + 0.5) * CITY_G;
+  float r = length(cen), near = landNear();
+  hs = vec2(0.0);
+  if (r < near * 1.04 || r > landFar() || mod(c.x, 6.0) < 1.0 || mod(c.y, 6.0) < 1.0) return vec4(0.0);
+  float h1 = hashL(c * 1.31 + 17.0), h2 = hashL(c + 3.7);
+  vec2 dc = vec2(sin(uLandB.y), cos(uLandB.y)) * near * 4.2;
+  float down = exp(-dot(cen - dc, cen - dc) / (2.0 * near * near * 1.1));
+  float tower = down * step(0.55, h2);
+  float H = (7.0 + 26.0 * h1 * h1) * (0.45 + 0.8 * valueNoise(cen / 700.0 + uLandB.z)) + tower * (60.0 + 320.0 * pow(hashL(c + 7.7), 1.6)) + down * 25.0 * h1;
+  // Towers are slim; low-rise blocks fill more of their lots.
+  hs = CITY_G * mix(vec2(0.3 + 0.15 * hashL(c * 0.71 + 9.1), 0.3 + 0.15 * hashL(c + 21.3)), vec2(0.2 + 0.1 * hashL(c + 2.9)), tower);
+  return vec4(cen, H * uLand.y * 0.5, h1);
+}
+
+vec4 gLot = vec4(0.0);
+float gBeacon = 0.0;  // red aviation lights the ray passed close to
+
+// The first building face or street a ray meets, walking the lot grid cell by cell, or -1.
+float cityTrace(vec3 ro, vec3 rd, float fp, out vec3 n) {
+  float t = shoreEntry(ro, rd), top = 340.0 * uLand.y * 0.5 - uSurf.y;
+  n = vec3(0.0, 1.0, 0.0);
+  vec2 v = rd.xz, o = ro.xz + v * t, c = floor(o / CITY_G), s = vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
+  vec2 inv = 1.0 / max(abs(v), vec2(1e-7));
+  vec2 tN = t + ((c + max(s, 0.0)) * CITY_G - o) * s * inv, tD = CITY_G * inv;
+  vec3 ri = 1.0 / mix(rd, vec3(1e-7), lessThan(abs(rd), vec3(1e-7)));
+  for (int i = 0; i < 160; i++) {
+    float tx = min(tN.x, tN.y);
+    vec2 hs;
+    vec4 lot = cityLot(c, hs);
+    if (lot.z > 110.0) {
+      vec3 b = vec3(lot.x, lot.z - uSurf.y + 2.0, lot.y) - ro;
+      float tb = max(dot(b, rd), 1.0), dd = length(b - rd * tb), w = max(fp * tb, 0.4);
+      gBeacon += exp(-0.5 * dd * dd / (w * w)) * min(1.0, 0.8 / w) * exp(-tb / 9000.0);
+    }
+    if (lot.z > 0.0) {
+      vec3 ta = (vec3(lot.x - hs.x, -uSurf.y, lot.y - hs.y) - ro) * ri, tb = (vec3(lot.x + hs.x, lot.z - uSurf.y, lot.y + hs.y) - ro) * ri;
+      vec3 mn = min(ta, tb), mx = max(ta, tb);
+      float te = max(max(mn.x, mn.y), mn.z), tl = min(min(mx.x, mx.y), mx.z);
+      if (te < tl && te > 0.0) {
+        n = -sign(rd) * step(mn.yzx, mn) * step(mn.zxy, mn);
+        gLot = lot;
+        return te;
+      }
+    }
+    if (rd.y < 0.0) {
+      float tg = (-uSurf.y - ro.y) / rd.y;
+      if (tg < tx) { gLot = vec4(0.0); return max(tg, t); }
+    }
+    if (rd.y > 0.0 && ro.y + rd.y * tx > top) break;
+    t = tx;
+    if (tN.x < tN.y) { c.x += s.x; tN.x += tD.x; } else { c.y += s.y; tN.y += tD.y; }
+    if (dot(c, c) * CITY_G * CITY_G > pow(landFar() + CITY_G, 2.0)) break;
   }
-  c = mix(horizonSky(d), c, hazeT(km));
-  return applyFog(c, d, km * 1000.0, amb);
+  return -1.0;
+}
+
+// Facades of punched windows or glass curtain wall that mirror the sky; lit windows after dark in
+// a mix of warm and cool light; windows smaller than a pixel blend to their average.
+vec3 cityShade(vec3 ro, vec3 rd, float t, vec3 n, float fp, vec3 amb) {
+  vec3 p = ro + rd * t;
+  float px = fp * t, id = gLot.w, lights = uLandB.w;
+  vec3 c;
+  if (gLot.z <= 0.0) {
+    c = vec3(0.045) * (directLight(n) + amb) + uCityColor * lights * 0.5 * uNightScale;
+  } else if (n.y > 0.5) {
+    c = mix(vec3(0.2), vec3(0.32, 0.3, 0.28), fract(id * 9.1)) * (directLight(n) + amb);
+  } else {
+    bool glassy = fract(id * 7.13) < 0.45;
+    vec3 wall = mix(vec3(0.26, 0.25, 0.24), vec3(0.52, 0.47, 0.4), fract(id * 3.7)) * (glassy ? 0.35 : 1.0);
+    float up = p.y + uSurf.y, fh = 3.7, cw = glassy ? 1.5 : 2.2 + 1.6 * fract(id * 5.3);
+    vec2 w = vec2((abs(n.x) > 0.5 ? p.z : p.x) / cw, up / fh), f = fract(w);
+    float win = glassy ? smoothstep(0.02, 0.1, f.y) * (1.0 - smoothstep(0.86, 0.94, f.y)) * smoothstep(0.02, 0.08, f.x) * (1.0 - smoothstep(0.92, 0.98, f.x))
+                       : step(0.2, f.x) * step(f.x, 0.8) * step(0.3, f.y) * step(f.y, 0.82);
+    float lod = smoothstep(0.2, 0.8, px / cw), winAvg = glassy ? 0.72 : 0.31;
+    float cover = mix(win, winAvg, lod);
+    vec3 R = reflect(rd, n);
+    float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-rd, n), 0.0), 5.0);
+    vec3 refl = mix(horizonSky(R), physicalSky(normalize(vec3(R.x, max(R.y, 0.02), R.z))), smoothstep(0.0, 0.3, R.y));
+    refl += sunLight(normalize(R + vec3(0.0, 1e-4, 0.0)), max(fp, 0.004)) * 0.3;
+    vec3 glass = refl * mix(0.1, 1.0, fres) + vec3(0.02, 0.025, 0.03) * amb;
+    c = mix(wall * (directLight(n) + amb * 0.85), glass, cover);
+    uint hh = hash3u(uvec3(uvec2(ivec2(floor(w)) + 65536), uint(id * 1e6)));
+    float on = step(rnd(hh), lights * 0.75), tone = rnd(hh), level = mix(0.45, 1.0, rnd(hh));
+    vec3 lamp = mix(uCityColor, vec3(0.8, 0.9, 1.0) * luma(uCityColor) * 1.4, step(0.68, tone)) * level;
+    c += mix(lamp * on * win, uCityColor * lights * 0.75 * 0.7 * winAvg, lod) * 3.2 * uNightScale;
+    c *= mix(0.6, 1.0, smoothstep(0.0, 30.0, up));
+  }
+  vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
+  c = c * tr + horizonSky(rd) * (1.0 - tr);
+  return applyFog(c, rd, t, amb);
 }
 
 vec2 noiseGrad(vec3 c, float rate, int ch) {
@@ -2847,30 +2967,16 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   return applyFog(col, d, 60000.0, amb);
 }
 
-vec3 viewRadiance(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
-  vec3 landCol = vec3(0.0);
-  float landT = 1.0;
-  if (uLand.x > 0.5 && d.y < 0.4 && !gNoLand) {
-    float az = atan(d.x, d.z), el = asin(clamp(d.y, -1.0, 1.0));
-    for (int L = 0; L < 4; L++) {
-      if (L >= int(uLand.w) || el < -uSurf.y / (LAND_DIST[L] * uLandB.x * 1000.0)) break;
-      Ridge rg = ridgeAt(L, az, fp);
-      float cov = smoothstep(-fp, fp, rg.h - el), tree = 0.0, tone = 1.0;
-      vec3 tn = vec3(0.0, 0.3, 0.95);
-      if (uLand.x > 2.5 && uLand.x < 3.5) {
-        tree = forestCover(L, az, el, rg.hb, fp, tn, tone);
-        if (rg.top > 0.5 && cov > tree) tree = 0.0;
-        cov = max(cov, tree);
-      }
-      if (cov > 0.0) {
-        landCol += landT * cov * shadeLand(L, d, az, el, rg, amb, fp, tree, tn, tone);
-        landT *= 1.0 - cov;
-        if (landT < 0.004) break;
-      }
-    }
+vec3 viewRadiance(vec3 ro, vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
+  vec3 beacon = vec3(0.0);
+  if (uLand.x > 0.5 && d.y < 0.5 && !gNoLand) {
+    vec3 n;
+    gBeacon = 0.0;
+    float t = uLand.x > 3.5 ? cityTrace(ro, d, fp, n) : landTrace(ro, d, fp);
+    beacon = vec3(1.0, 0.07, 0.03) * gBeacon * 40.0 * uNightScale * uLandB.w;
+    if (t > 0.0) return beacon + (uLand.x > 3.5 ? cityShade(ro, d, t, n, fp, amb) : landShade(ro, d, t, fp, amb));
   }
-  if (landT < 0.004) return landCol;
-  return landCol + landT * skyAbove(d, fp, fpOut, jitter, amb);
+  return beacon + skyAbove(d, fp, fpOut, jitter, amb);
 }
 
 // Everything a view ray meets, front to back: trees, grass blades, then the ground (water,
@@ -2888,7 +2994,7 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
     // Rays that outrun the march below the horizon meet the far, flattened dune sea.
     Dm = tt > 0.0 ? tt : d.y < 0.0 ? max((E + gH0) / -d.y, 6000.0) : -1.0;
   }
-  bool ground = (terrain ? Dm > 0.0 : d.y < 0.0) && (uLand.x < 0.5 || Dm < LAND_DIST[0] * uLandB.x * 1000.0);
+  bool ground = (terrain ? Dm > 0.0 : d.y < 0.0) && (uLand.x < 0.5 || Dm < landNear());
   if (!ground) Dm = 1e9;
   float rate = fp * Dm * inversesqrt(max(-d.y, 0.02));
   if (grassy) grassSetup();
@@ -2954,7 +3060,7 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
       acc += T * (terrain ? terrainShade(d, Dm, fp, amb) : plainGround(d.xz * Dm, rate) * (directLight(vec3(0.0, 1.0, 0.0)) * gShade + amb));
       break;
     }
-    acc += T * viewRadiance(rd, fp, fpOut, jitter, amb);
+    acc += T * viewRadiance(ro, rd, fp, fpOut, jitter, amb);
     break;
   }
   gMirror = false;
@@ -4121,12 +4227,12 @@ const TABS = [
       { key: 'land', label: 'Horizon', type: 'choice', cols: 3, options: LANDS.map(([title], i) => ({ value: i, title })),
         after: () => { if (P.land) P.landHeight = LANDS[P.land][1]; } },
       { key: 'landHeight', label: 'Height', min: 0.3, max: 15, step: 0.05, fmt: deg, when: () => P.land > 0 },
-      { key: 'landRough', label: 'Ruggedness', min: 0, max: 1, step: 0.01, fmt: fmt(2), when: () => P.land > 0 },
-      { key: 'landLayers', label: 'Depth Layers', min: 1, max: 4, step: 1, fmt: fmt(0), when: () => P.land > 0 },
-      { key: 'landDepth', label: 'Distance', min: 0.2, max: 5, step: 0.01, fmt: v => v.toFixed(2) + '×', when: () => P.land > 0 },
+      { key: 'landRough', label: 'Ruggedness', min: 0, max: 1, step: 0.01, fmt: fmt(2), when: () => P.land === 2 },
+      { key: 'landLayers', label: 'Extent', min: 1, max: 4, step: 1, fmt: fmt(0), when: () => P.land > 0 },
+      { key: 'landDepth', label: 'Shore Distance', min: 0.2, max: 5, step: 0.01, fmt: v => v.toFixed(2) + ' km', when: () => P.land > 0 },
       { key: 'landHeading', label: 'Rotate', min: 0, max: 360, step: 0.5, fmt: deg, when: () => P.land > 0 },
       { key: 'landSeed', label: 'Shape', min: 0, max: 50, step: 0.1, fmt: fmt(1), when: () => P.land > 0 },
-      { key: 'landColor', label: 'Color', type: 'color', when: () => P.land > 0 },
+      { key: 'landColor', label: 'Color', type: 'color', when: () => P.land > 0 && P.land !== 4 },
       { key: 'landSnow', label: 'Snow', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.land === 1 || P.land === 2 },
       { key: 'forestMix', label: 'Conifers', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.land === 3 },
       { key: 'forestDensity', label: 'Tree Density', min: 0.2, max: 1, step: 0.01, fmt: pct, when: () => P.land === 3 },
