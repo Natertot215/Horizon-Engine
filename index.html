@@ -72,9 +72,11 @@ button { font: inherit; color: inherit; }
 .saverow { display: flex; gap: 6px; padding: 0 14px 12px; flex: none; }
 .saverow .num { margin: 0; text-align: left; font-family: inherit; flex: 1; }
 .saverow .btn { flex: none; padding: 6px 12px; }
-.tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; padding: 6px 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; padding: 6px 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; scrollbar-width: none; overscroll-behavior-x: contain; }
+.tabs::-webkit-scrollbar { display: none; }
+.subhead { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; font-size: 9.5px; letter-spacing: .2em; text-transform: uppercase; }
 .tab {
-  background: none; border: 0; border-radius: 7px; color: var(--dim); cursor: pointer;
+  flex: none; width: 62px; background: none; border: 0; border-radius: 7px; color: var(--dim); cursor: pointer;
   padding: 6px 0 5px; display: grid; justify-items: center; gap: 3px; font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
 }
 .tab:hover { color: var(--ink); }
@@ -150,6 +152,8 @@ select option { background: #111; }
 }
 #bar .capgroup { display: none; align-items: center; gap: 6px; margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--faint); }
 #bar.capture .capgroup { display: flex; }
+#bar.compact > :not(.capgroup) { display: none; }
+#bar.compact .capgroup { margin-left: 0; padding-left: 4px; border-left: 0; }
 #bar .btn.ghost { border-color: transparent; color: var(--dim); padding: 7px 8px; min-width: 64px; }
 #bar .btn.ghost:hover { color: var(--ink); }
 #bar .clock { min-width: 58px; text-align: center; margin: 0; }
@@ -296,6 +300,35 @@ function cloudLayer(i, type, extra = {}) {
   return out;
 }
 
+// Planets and moons: two slots, each one of these kinds (colours and atmosphere per kind).
+const BODY_TYPES = [
+  ['Gas Giant', { ColorA: '#e3c7a0', ColorB: '#9c6a44', Atmo: 0.35 }],
+  ['Ice Giant', { ColorA: '#aedfea', ColorB: '#5e9ec4', Atmo: 0.6 }],
+  ['Rocky', { ColorA: '#c47c45', ColorB: '#6d3f25', Atmo: 0.15 }],
+  ['Moon', { ColorA: '#bdbab4', ColorB: '#5f5c58', Atmo: 0 }],
+  ['Ocean World', { ColorA: '#1e4f8c', ColorB: '#6a7a3c', Atmo: 0.8 }],
+  ['Lava World', { ColorA: '#1d1612', ColorB: '#ff6a1f', Atmo: 0.2 }],
+];
+
+function bodySlot(i, type, extra = {}) {
+  const out = {};
+  const base = {
+    On: false, Type: type, Size: 14, Elev: 20, Heading: 200, Phase: 0.3, Light: 30, Roll: 12, Lean: 16, Bright: 1,
+    Ring: 0, RingIn: 1.35, RingOut: 2.3, RingColor: '#d9c7a6', Seed: i * 3 + 1, ...BODY_TYPES[type][1], ...extra,
+  };
+  for (const [k, v] of Object.entries(base)) out[`b${i}${k}`] = v;
+  return out;
+}
+
+const BAND_STYLES = [
+  ['Natural', { mwCoreColor: '#ffdfbc', mwArmColor: '#d5e5ff', mwWarmth: 0.55, mwDust: 0.85, mwHII: 0.4 }],
+  ['Golden', { mwCoreColor: '#ffc37a', mwArmColor: '#ffe6c4', mwWarmth: 0.9, mwDust: 1, mwHII: 0.25 }],
+  ['Arctic', { mwCoreColor: '#dfeaff', mwArmColor: '#8fb6ff', mwWarmth: 0.35, mwDust: 0.7, mwHII: 0.1 }],
+  ['Violet', { mwCoreColor: '#ffbde9', mwArmColor: '#a493ff', mwWarmth: 0.5, mwDust: 0.8, mwHII: 0.8 }],
+  ['Rose', { mwCoreColor: '#ffc9b0', mwArmColor: '#ffa6cf', mwWarmth: 0.6, mwDust: 0.9, mwHII: 1.3 }],
+  ['Emerald', { mwCoreColor: '#eaffbd', mwArmColor: '#78e3c6', mwWarmth: 0.5, mwDust: 0.8, mwHII: 0.2 }],
+];
+
 const DEFAULTS = {
   sunElev: 8, sunHeading: 200, sunDisk: true, sunSize: 1, sunGlow: 0.5, sunIntensity: 1,
   rayleigh: 1, mie: 1, mieG: 0.8, ozone: 1, skyFill: 0.5, albedo: 0.12,
@@ -325,6 +358,10 @@ const DEFAULTS = {
   meteors: 0, meteorBright: 1, meteorLength: 12, meteorHeading: 60, meteorSeed: 1,
   moon: false, moonPhase: 0.5, moonElev: 25, moonHeading: 140, moonSize: 1, moonBright: 1, moonGlow: 0.4,
   moonHalo: 0, earthshine: 0.3, moonLight: 1, moonTilt: 0,
+  ...bodySlot(0, 0, { Ring: 0.85 }),
+  ...bodySlot(1, 3, { Size: 3, Elev: 34, Heading: 235, Phase: 0.42, Light: -25, Roll: 0, Lean: 0 }),
+  gal: 0, galSize: 16, galElev: 38, galHeading: 165, galIncl: 62, galAngle: 28, galArms: 2, galTwist: 2.4, galSeed: 1,
+  galCore: '#ffe2b8', galArm: '#a6bdff',
 
   ...cloudLayer(0, 'cumulus', { On: false }),
   ...cloudLayer(1, 'altocumulus', { On: false }),
@@ -667,8 +704,20 @@ function layout() {
   F.y = top + (ah - F.h) / 2;
   F.cx = F.x + F.w / 2;
   frameEl.style.cssText = `left:${F.x}px;top:${F.y}px;width:${F.w}px;height:${F.h}px`;
-  bar.style.left = F.cx + 'px';
+  placeBar();
   invalidate();
+}
+
+// Centre the bar under the frame, but keep it on screen and clear of the credit; in capture mode,
+// drop the timelapse controls when the capture controls alone need the room.
+function placeBar() {
+  const vw = innerWidth, narrow = vw <= 700;
+  const right = (!panel.classList.contains('hidden') && !narrow ? vw - 324 : vw) - 8;
+  const left = narrow || C.on ? 8 : $('credit').getBoundingClientRect().right + 12;
+  bar.classList.remove('compact');
+  if (C.on && bar.offsetWidth > right - left) bar.classList.add('compact');
+  const half = bar.offsetWidth / 2;
+  bar.style.left = clamp(F.cx, left + half, Math.max(left + half, right - half)) + 'px';
 }
 
 function cssToImage(x, y) {
@@ -696,6 +745,8 @@ float hash12(vec2 p) {
 }
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+float wrapAngle(float a) { return mod(a + PI, TAU) - PI; }
 
 float valueNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -1142,6 +1193,179 @@ vec4 moonDisk(vec3 d, float fp) {
   return vec4(col * uMoon.z * cover + glow, cover);
 }
 
+// ── Planets, moons and a deep-sky galaxy ──
+
+const int MAX_BODIES = 2;
+
+// Ring opacity across the ring (u: 0 inner edge, 1 outer edge); fu is the footprint in u.
+float ringDensity(float u, float seed, float fu) {
+  float d = smoothstep(0.0, 0.03, u) * smoothstep(1.0, 0.95, u);
+  float fine = mix(0.5 + 0.5 * sin(u * 260.0 + seed * 3.0), 0.5, smoothstep(0.002, 0.008, fu));
+  float mid = mix(0.5 + 0.5 * sin(u * 47.0 + seed * 1.3), 0.5, smoothstep(0.015, 0.05, fu));
+  float gap = 1.0 - 0.94 * exp(-pow((u - 0.64) / 0.022, 2.0)) * (1.0 - smoothstep(0.02, 0.06, fu));
+  return d * gap * mix(0.3, 1.0, smoothstep(0.05, 0.4, u)) * (0.5 + 0.3 * mid + 0.2 * fine);
+}
+
+// Albedo (rgb) of a body's surface at unit normal n, plus emission for lava worlds.
+vec3 bodySurface(int type, vec3 n, vec3 ax, float seed, vec3 c1, vec3 c2, float fr, out vec3 emit) {
+  vec3 e1 = normalize(cross(ax, vec3(0.0, 0.0, 1.0)) + vec3(1e-4, 0.0, 0.0)), e2 = cross(ax, e1);
+  float lat = asin(clamp(dot(n, ax), -1.0, 1.0));
+  float lon = atan(dot(n, e2), dot(n, e1)) + uTime.y * 0.01;
+  vec3 sp = vec3(cos(lat) * cos(lon), sin(lat), cos(lat) * sin(lon));
+  vec3 o = seed * vec3(0.173, 0.311, 0.097);
+  emit = vec3(0.0);
+  if (type == 0 || type == 1) {
+    // Banded giant: turbulent zones and belts, with an oval storm on gas giants.
+    float turb = nz(sp * 1.1 + o, fr * 1.1).a - 0.5;
+    float fine = nz(sp * vec3(1.6, 9.0, 1.6) + o.yzx, fr * 6.0).r - 0.5;
+    float t = lat * (type == 0 ? 8.0 : 5.0) + turb * 0.6 + fine * 0.4;
+    float bands = 0.5 + 0.32 * sin(t * PI + seed) + 0.18 * sin(t * 2.3 * PI + seed * 2.0);
+    vec3 alb = mix(c1, c2, smoothstep(0.15, 0.85, bands) * (type == 0 ? 1.0 : 0.35));
+    if (type == 0) {
+      alb = mix(alb, vec3(0.95, 0.9, 0.82), 0.25 * smoothstep(0.75, 0.95, bands));
+      vec2 sd = vec2(wrapAngle(lon - seed * 1.9) * cos(lat), (lat + 0.38) * 2.4);
+      float storm = smoothstep(0.2, 0.11, length(sd) + turb * 0.05);
+      alb = mix(alb, c2 * vec3(1.25, 0.75, 0.6), storm * 0.75);
+    }
+    return alb;
+  }
+  vec4 n1 = nz(sp * 1.4 + o, fr * 1.4), n2 = nz(sp * 4.5 + o.zxy, fr * 4.5);
+  float relief = n1.r * 0.65 + n2.r * 0.35;
+  if (type == 2) {
+    vec3 alb = mix(c2, c1, smoothstep(0.35, 0.65, relief)) * (0.85 + 0.3 * n2.g);
+    return mix(alb, vec3(0.9, 0.9, 0.92), smoothstep(1.2, 1.35, abs(lat) + (n2.r - 0.5) * 0.2));
+  }
+  if (type == 3) {
+    float maria = smoothstep(0.52, 0.62, n1.r);
+    float craters = smoothstep(0.55, 0.85, nz(sp * 6.0 + o.yzx, fr * 6.0).g);
+    return mix(c1, c2, maria * 0.85) * (0.9 + 0.25 * craters - 0.1 * n2.r);
+  }
+  if (type == 4) {
+    // Ocean world: a few continents, ice caps and bands of swirling cloud.
+    float cont = nz(sp * 0.5 + o, fr * 0.5).r * 0.8 + n2.r * 0.2;
+    float land = smoothstep(0.52, 0.535, cont);
+    vec3 ground = mix(c2, c2 * vec3(1.4, 1.1, 0.7), smoothstep(0.56, 0.66, cont));
+    vec3 alb = mix(c1 * (0.85 + 0.3 * smoothstep(0.52, 0.45, cont)), ground, land);
+    alb = mix(alb, vec3(0.92), smoothstep(1.15, 1.3, abs(lat) + (n2.r - 0.5) * 0.25));
+    vec3 cw = sp + (vec3(nz(sp * 0.7 + 5.1, fr * 0.7).r, nz(sp * 0.7 + 7.3, fr * 0.7).r, nz(sp * 0.7 + 2.9, fr * 0.7).r) - 0.5) * 0.9;
+    float cloud = smoothstep(0.52, 0.72, nz(cw * vec3(1.4, 2.6, 1.4) + o.yzx, fr * 2.0).r);
+    return mix(alb, vec3(0.95), cloud * 0.85);
+  }
+  // Lava world: dark crust broken by glowing fissures.
+  float crack = pow(1.0 - abs(nz(sp * 3.5 + o, fr * 3.5).a * 2.0 - 1.0), 12.0) * (1.0 - smoothstep(0.02, 0.08, fr * 3.5));
+  emit = c2 * (crack * 3.0 + smoothstep(0.62, 0.8, relief) * 0.15);
+  return c1 * (0.7 + 0.6 * n2.r);
+}
+
+// Planets and moons over the sky: premultiplied colour and coverage (which hides what is behind).
+vec4 bodies(vec3 d, float fp) {
+  vec3 acc = vec3(0.0);
+  float T = 1.0;
+  for (int i = 0; i < MAX_BODIES; i++) {
+    if (i >= uBodyN) break;
+    vec4 A = uBodyA[i], B = uBodyB[i], C = uBodyC[i], Dd = uBodyD[i];
+    vec3 c = A.xyz;
+    float R = A.w, cosA = dot(d, c), reach = R * max(Dd.w, 1.0) * 1.12;
+    if (cosA < cos(min(reach, 3.0))) continue;
+    vec3 right = abs(c.y) > 0.999 ? vec3(1.0, 0.0, 0.0) : normalize(cross(vec3(0.0, 1.0, 0.0), c)), up = cross(c, right);
+    vec3 tv = d - c * cosA;
+    float tl = length(tv), ang = acos(clamp(cosA, -1.0, 1.0));
+    vec2 xy = tl > 1e-8 ? vec2(dot(tv, right), dot(tv, up)) / tl * (ang / R) : vec2(0.0);
+    float r = length(xy), fr = fp / R;
+    int type = int(B.x);
+    vec3 ax = vec3(sin(Dd.x) * cos(Dd.y), cos(Dd.x) * cos(Dd.y), sin(Dd.y)), L = C.xyz;
+    vec3 c1 = uBodyCol1[i], c2 = uBodyCol2[i];
+    // Disk.
+    float pa = clamp((1.0 - r) / fr + 0.5, 0.0, 1.0), z = sqrt(max(1.0 - r * r, 0.0));
+    vec3 pc = vec3(0.0);
+    if (pa > 0.0) {
+      vec3 n = vec3(xy, z), emit;
+      vec3 alb = bodySurface(type, n, ax, C.w, c1, c2, fr, emit);
+      float mu0 = dot(n, L);
+      float lit = type == 3 || type == 2 ? 2.0 * max(mu0, 0.0) / (max(mu0, 0.0) + max(z, 0.05)) : smoothstep(-0.08, 0.35, mu0) * max(mu0 + 0.08, 0.0) / 1.08;
+      if (B.z > 0.0 && abs(dot(L, ax)) > 1e-3) {
+        // Shadow of the rings across the disk.
+        float s = -dot(n, ax) / dot(L, ax);
+        if (s > 0.0) {
+          float rho = length(n + L * s);
+          float u = (rho - Dd.z) / max(Dd.w - Dd.z, 1e-3);
+          if (u > 0.0 && u < 1.0) lit *= 1.0 - 0.85 * B.z * ringDensity(u, C.w, fr);
+        }
+      }
+      vec3 rim = mix(c1, vec3(0.55, 0.75, 1.0), type == 4 ? 0.8 : 0.3) * B.w * pow(1.0 - z, 3.0) * smoothstep(-0.2, 0.4, mu0);
+      pc = (alb * (lit + 0.012) + rim + emit) * B.y;
+    }
+    // Atmosphere halo just outside the limb, on the lit side.
+    vec3 halo = vec3(0.0);
+    if (B.w > 0.0 && r > 0.9) {
+      vec2 rd = xy / max(r, 1e-4);
+      float side = smoothstep(-0.3, 0.6, dot(rd, L.xy) + L.z * 0.3);
+      halo = mix(c1, vec3(0.55, 0.75, 1.0), type == 4 ? 0.8 : 0.3) * B.w * 0.6 * exp(-max(r - 1.0, 0.0) / 0.035) * side * B.y;
+    }
+    // Rings: where the view ray crosses the ring plane, in front of or behind the disk.
+    vec3 rc = vec3(0.0);
+    float ra = 0.0, zr = -1e9;
+    if (B.z > 0.0 && abs(ax.z) > 1e-3) {
+      zr = -(ax.x * xy.x + ax.y * xy.y) / ax.z;
+      vec3 q = vec3(xy, zr);
+      float rho = length(q), u = (rho - Dd.z) / max(Dd.w - Dd.z, 1e-3);
+      if (u > 0.0 && u < 1.0) {
+        float fu = fr / max(Dd.w - Dd.z, 1e-3) / max(abs(ax.z), 0.05);
+        ra = B.z * ringDensity(u, C.w, fu);
+        // The planet's shadow falls across the rings.
+        float bq = dot(q, L), cq = dot(q, q) - 1.0, disc = bq * bq - cq;
+        float shade = disc > 0.0 && -bq - sqrt(disc) > 0.0 ? 0.08 : 1.0;
+        float lightUp = 0.3 + 0.7 * abs(dot(L, ax));
+        rc = uBodyRing[i] * (0.65 + 0.35 * sin(u * 19.0 + C.w)) * lightUp * shade * B.y;
+      }
+    }
+    // Composite front to back: rings in front of the disk, the disk, rings behind, halo.
+    vec3 col;
+    float a;
+    if (ra > 0.0 && (pa <= 0.0 || zr > z)) {
+      col = rc * ra + (1.0 - ra) * (pc + (1.0 - pa) * halo);
+      a = 1.0 - (1.0 - ra) * (1.0 - pa);
+    } else {
+      col = pc + (1.0 - pa) * (rc * ra + halo);
+      a = 1.0 - (1.0 - pa) * (1.0 - ra);
+    }
+    acc += T * col;
+    T *= 1.0 - a;
+  }
+  return vec4(acc, 1.0 - T);
+}
+
+// A spiral galaxy hanging in the night sky: bulge, logarithmic arms with knots of young stars,
+// dust lanes along the arms' inner edges, seen at any inclination.
+vec3 galaxy(vec3 d, float fp) {
+  vec3 c = uGalDir;
+  float R = uGal.y, cosA = dot(d, c);
+  if (cosA < cos(min(R * 1.6, 3.0))) return vec3(0.0);
+  vec3 right = abs(c.y) > 0.999 ? vec3(1.0, 0.0, 0.0) : normalize(cross(vec3(0.0, 1.0, 0.0), c)), up = cross(c, right);
+  vec3 tv = d - c * cosA;
+  float tl = length(tv), ang = acos(clamp(cosA, -1.0, 1.0));
+  vec2 xy = tl > 1e-8 ? vec2(dot(tv, right), dot(tv, up)) / tl * (ang / R) : vec2(0.0);
+  float pa = uGal.w;
+  xy = mat2(cos(pa), sin(pa), -sin(pa), cos(pa)) * xy;
+  float ci = max(cos(uGal.z), 0.06);
+  vec2 g = vec2(xy.x, xy.y / ci);
+  float r = length(g), th = atan(g.y, g.x), fr = fp / R / ci;
+  float arms = uGalB.x, twist = uGalB.y;
+  vec3 o = vec3(uGalB.z * 0.37, uGalB.z * 0.11, 0.53);
+  float w = (nz(vec3(g * 1.5, 0.0) + o, fr * 1.5).a - 0.5) * 1.2;
+  float spiral = arms * (th - twist * log(max(r, 0.02))) + w;
+  float arm = pow(0.5 + 0.5 * cos(spiral), 2.2);
+  float lane = pow(0.5 + 0.5 * cos(spiral + 0.9), 8.0) * smoothstep(0.06, 0.25, r);
+  float disk = exp(-r * 2.3) * smoothstep(1.4, 0.8, r);
+  float bulge = exp(-r * r / 0.01) * 1.6 + exp(-r / 0.09) * 0.45;
+  float knots = smoothstep(0.62, 0.9, nz(vec3(g * 7.0, 0.31) + o, fr * 7.0).g) * arm;
+  // Edge-on galaxies show a dark band through the middle of the disk.
+  float band = exp(-pow(xy.y / max(0.03 * (1.0 - ci) + 0.01, 1e-3), 2.0) * 0.5) * smoothstep(0.35, 0.95, 1.0 - ci) * smoothstep(1.2, 0.3, r);
+  vec3 col = uGalCore * bulge + uGalArm * disk * (0.3 + 1.1 * arm) * (1.0 - 0.75 * lane) + vec3(1.0, 0.45, 0.6) * knots * disk * 2.2;
+  col *= 1.0 - 0.8 * band;
+  return col * uGal.x * 0.2;
+}
+
 vec3 meteors(vec3 d, float fp, float fpOut) {
   vec3 sum = vec3(0.0);
   float sigma0 = starSigma(fpOut) * 0.8;
@@ -1178,6 +1402,7 @@ vec3 nightLayers(vec3 d, float fp, float fpOut) {
   vec3 c = vec3(0.0);
   if (uMW.x > 0.0) c += milkyWay(p, fp, boost, clear);
   if (uNeb.x > 0.0) { vec4 nb = nebula(p, fp); c += nb.rgb; clear *= 1.0 - nb.a; }
+  if (uGal.x > 0.0) c += galaxy(d, fp) * clear;
   if (uStars.x > 0.0) c += clear * (uTrails.x > 0.0 ? starTrails(p, fp, fpOut) : stars(p, fp, fpOut, boost * uMW.x, uRight * uCel, uUp * uCel));
   return c;
 }
@@ -1357,8 +1582,6 @@ float ridgeNoise(float a, float freq, float seed, float rate) {
   vec2 c = vec2(cos(a), sin(a)) * (freq * 0.06);
   return nz(vec3(c, seed * 0.173) + 0.5, rate * freq * 0.06).r;
 }
-
-float wrapAngle(float a) { return mod(a + PI, TAU) - PI; }
 
 struct Ridge { float h; float hb; float cell; float u; float top; };
 
@@ -2415,6 +2638,19 @@ const SCENE_UNIFORMS = [
   ['uNebA', 'vec3', () => hexLinear(P.nebA)],
   ['uNebB', 'vec3', () => hexLinear(P.nebB)],
   ['uMoonDir', 'vec3', () => D.moonDir],
+  ['uBodyN', 'int', () => D.bodyN],
+  ['uBodyA', 'vec4', () => D.bodyA, 2],
+  ['uBodyB', 'vec4', () => D.bodyB, 2],
+  ['uBodyC', 'vec4', () => D.bodyC, 2],
+  ['uBodyD', 'vec4', () => D.bodyD, 2],
+  ['uBodyCol1', 'vec3', () => D.bodyCol1, 2],
+  ['uBodyCol2', 'vec3', () => D.bodyCol2, 2],
+  ['uBodyRing', 'vec3', () => D.bodyRing, 2],
+  ['uGal', 'vec4', () => [P.gal, P.galSize / 2 * DEG, P.galIncl * DEG, P.galAngle * DEG]],
+  ['uGalDir', 'vec3', () => skyVector(P.galElev, P.galHeading)],
+  ['uGalB', 'vec4', () => [P.galArms, P.galTwist, P.galSeed, 0]],
+  ['uGalCore', 'vec3', () => hexLinear(P.galCore)],
+  ['uGalArm', 'vec3', () => hexLinear(P.galArm)],
   ['uMoon', 'vec4', () => [P.moon ? 1 : 0, 0.0045 * P.moonSize, D.moonDisk, P.moonGlow]],
   ['uMoonLight', 'vec4', () => [...D.moonLight, P.earthshine]],
   ['uMoonHalo', 'float', () => P.moonHalo],
@@ -2534,10 +2770,11 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
     float above = smoothstep(-fp, fp, d.y);
     vec3 Tv = mix(vec3(1.0), transmittance(OBS, max(d.y, 0.0)) / transmittance(OBS, 1.0), uStarLook.w);
     vec4 moon = uMoon.x > 0.0 ? moonDisk(d, fp) : vec4(0.0);
+    vec4 body = uBodyN > 0 ? bodies(d, fp) : vec4(0.0);
     vec3 night = nightSky(d) + aurora(d, fp, jitter);
     // Stars and deep-sky layers are invisible against daylight; skip their cost.
-    if (uNightScale > 2e-3) night += (nightLayers(d, fp, fpOut) * (1.0 - moon.a) + meteors(d, fp, fpOut)) * Tv;
-    col += (night * uNightScale + moon.rgb * Tv) * above;
+    if (uNightScale > 2e-3) night += (nightLayers(d, fp, fpOut) * (1.0 - moon.a) * (1.0 - body.a) + meteors(d, fp, fpOut)) * Tv;
+    col += (night * uNightScale + (moon.rgb + body.rgb * (1.0 - moon.a)) * Tv) * above;
     if (!gMirror) col += sunLight(d, fp) * above;
   }
   if (uCloudN > 0) {
@@ -3068,6 +3305,25 @@ function derive(img) {
   D.moonScale = moonI * gain * ev;
   D.nightScale = nightVis * ev;
   D.moonDisk = ev * P.moonBright * (nightVis * 1.5 + sunVis * 0.05 * gain);
+  const on = [0, 1].filter(i => P[`b${i}On`]);
+  D.bodyN = on.length;
+  D.bodyA = new Array(8).fill(0);
+  D.bodyB = new Array(8).fill(0);
+  D.bodyC = new Array(8).fill(0);
+  D.bodyD = new Array(8).fill(0);
+  D.bodyCol1 = new Array(6).fill(0);
+  D.bodyCol2 = new Array(6).fill(0);
+  D.bodyRing = new Array(6).fill(0);
+  on.forEach((i, n) => {
+    const b = k => P[`b${i}${k}`], al = b('Phase') * Math.PI, th = b('Light') * DEG;
+    D.bodyA.splice(n * 4, 4, ...skyVector(b('Elev'), b('Heading')), b('Size') / 2 * DEG);
+    D.bodyB.splice(n * 4, 4, b('Type'), 2.2 * ev * b('Bright') * (nightVis + 0.35 * sunVis), b('Ring'), b('Atmo'));
+    D.bodyC.splice(n * 4, 4, Math.sin(al) * Math.cos(th), Math.sin(al) * Math.sin(th), Math.cos(al), b('Seed'));
+    D.bodyD.splice(n * 4, 4, b('Roll') * DEG, b('Lean') * DEG, b('RingIn'), Math.max(b('RingOut'), b('RingIn') + 0.05));
+    D.bodyCol1.splice(n * 3, 3, ...hexLinear(b('ColorA')));
+    D.bodyCol2.splice(n * 3, 3, ...hexLinear(b('ColorB')));
+    D.bodyRing.splice(n * 3, 3, ...hexLinear(b('RingColor')));
+  });
 }
 
 function sceneValues(img) {
@@ -3125,6 +3381,8 @@ function advance(dtReal) {
     const h = dt / 3600;
     setSkyVector(rotateAboutPole(skyVector(P.sunElev, P.sunHeading), 15 * h), 'sunElev', 'sunHeading');
     setSkyVector(rotateAboutPole(skyVector(P.moonElev, P.moonHeading), 14.49 * h), 'moonElev', 'moonHeading');
+    for (const i of [0, 1]) if (P[`b${i}On`]) setSkyVector(rotateAboutPole(skyVector(P[`b${i}Elev`], P[`b${i}Heading`]), 15 * h), `b${i}Elev`, `b${i}Heading`);
+    if (P.gal > 0) setSkyVector(rotateAboutPole(skyVector(P.galElev, P.galHeading), 15.041 * h), 'galElev', 'galHeading');
     P.skyRotation = ((P.skyRotation + 15.041 * h) % 360 + 360) % 360;
   }
   if (P.motionClouds) {
@@ -3137,7 +3395,7 @@ function advance(dtReal) {
   }
 }
 
-const ORIGIN_KEYS = ['sunElev', 'sunHeading', 'moonElev', 'moonHeading', 'skyRotation'];
+const ORIGIN_KEYS = ['sunElev', 'sunHeading', 'moonElev', 'moonHeading', 'skyRotation', 'b0Elev', 'b0Heading', 'b1Elev', 'b1Heading', 'galElev', 'galHeading'];
 
 function setPlaying(on) {
   if (on === ANIM.playing) return;
@@ -3568,8 +3826,10 @@ $('busy-cancel').onclick = () => { if (job) job.cancel = true; };
 let cloudSel = 0;
 const fmt = d => v => v.toFixed(d);
 const km = v => v.toFixed(2) + ' km';
-const resolveKey = key => key.replace('#', cloudSel);
+let bodySel = 0;
+const resolveKey = key => key.startsWith('b#') ? `b${bodySel}${key.slice(2)}` : key.replace('#', cloudSel);
 const layerOn = () => P[resolveKey('c#On')];
+const bodyOn = () => P[resolveKey('b#On')];
 const deg = v => v.toFixed(0) + '°';
 const grassy = () => P.surface === 3 || P.surface === 4;
 const pct = v => Math.round(v * 100) + '%';
@@ -3582,9 +3842,8 @@ const ICONS = {
   motion: '<path d="M2 8h3l2-4.5 2.5 9L11.5 8H14"/>',
   land: '<path d="M1.5 12.5l4.2-6.5 3 4.2 1.8-2.4 4 4.7z"/><path d="M1.5 14.5h13"/>',
   clouds: '<path d="M4.5 12.5h7.2a2.8 2.8 0 0 0 .3-5.6 4 4 0 0 0-7.7-.6A3.1 3.1 0 0 0 4.5 12.5z"/>',
-  camera: '<path d="M2 5.5h3l1.2-1.8h3.6L11 5.5h3v7H2z"/><circle cx="8" cy="9" r="2.2"/>',
+  space: '<circle cx="8" cy="8" r="3.4"/><path d="M1.6 10.9c-.7-1.3 2.3-3.4 6.2-4.6s7.4-1.2 7.9.1-1.8 2.2-4.1 3.1"/>',
   color: '<path d="M8 2.2c2.6 3.1 4 5.2 4 7.1a4 4 0 0 1-8 0c0-1.9 1.4-4 4-7.1z"/>',
-  capture: '<path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3"/><circle cx="8" cy="8" r="2"/>',
 };
 
 const TABS = [
@@ -3682,14 +3941,54 @@ const TABS = [
       { key: 'skyRotation', label: 'Sky Rotation', min: 0, max: 360, step: 0.5, fmt: deg },
       { key: 'starSeed', label: 'Star Pattern', min: 1, max: 99, step: 1, fmt: fmt(0) },
     ]],
+  ]},
+  { id: 'space', label: 'Space', sections: [
     ['Milky Way', [
       { key: 'mw', label: 'Brightness', min: 0, max: 3, step: 0.01, fmt: v => v ? v.toFixed(2) : 'Off' },
+      { type: 'custom', build: buildBandStyles },
+      { key: 'mwTilt', label: 'Band Tilt', min: -90, max: 90, step: 0.5, fmt: deg, when: () => P.mw > 0 },
       { key: 'mwWidth', label: 'Width', min: 0.4, max: 2.5, step: 0.01, fmt: fmt(2), when: () => P.mw > 0 },
       { key: 'mwCore', label: 'Core', min: 0, max: 3, step: 0.01, fmt: fmt(2), when: () => P.mw > 0 },
       { key: 'mwDust', label: 'Dust Lanes', min: 0, max: 1.5, step: 0.01, fmt: fmt(2), when: () => P.mw > 0 },
-      { key: 'mwWarmth', label: 'Warmth', min: 0, max: 1, step: 0.01, fmt: fmt(2), when: () => P.mw > 0 },
+      { key: 'mwHII', label: 'Glowing Knots', min: 0, max: 2, step: 0.01, fmt: fmt(2), when: () => P.mw > 0 },
       { key: 'mwStars', label: 'Star Clouds', min: 0, max: 3, step: 0.01, fmt: fmt(2), when: () => P.mw > 0 },
+      { key: 'mwWarmth', label: 'Core Blend', min: 0, max: 1, step: 0.01, fmt: fmt(2), when: () => P.mw > 0 },
+      { key: 'mwCoreColor', label: 'Core Color', type: 'color', when: () => P.mw > 0 },
+      { key: 'mwArmColor', label: 'Arm Color', type: 'color', when: () => P.mw > 0 },
       { key: 'mwSeed', label: 'Structure', min: 0, max: 20, step: 0.1, fmt: fmt(1), when: () => P.mw > 0 },
+    ]],
+    ['Planets & Moons', [
+      { type: 'custom', build: buildBodyPicker },
+      { key: 'b#On', label: 'Visible', type: 'toggle' },
+      { type: 'custom', build: buildBodyTypes },
+      { key: 'b#Size', label: 'Size', min: 0.3, max: 70, step: 0.1, fmt: v => v.toFixed(1) + '°', when: bodyOn },
+      { key: 'b#Elev', label: 'Elevation', min: -10, max: 90, step: 0.1, fmt: deg, when: bodyOn },
+      { key: 'b#Heading', label: 'Heading', min: 0, max: 360, step: 0.5, fmt: deg, when: bodyOn },
+      { key: 'b#Phase', label: 'Phase', min: 0, max: 1, step: 0.005, fmt: v => `${Math.round((1 + Math.cos(v * Math.PI)) * 50)}% lit`, when: bodyOn },
+      { key: 'b#Light', label: 'Light From', min: -180, max: 180, step: 0.5, fmt: deg, when: bodyOn },
+      { key: 'b#Roll', label: 'Axis Tilt', min: -90, max: 90, step: 0.5, fmt: deg, when: bodyOn },
+      { key: 'b#Lean', label: 'Axis Lean', min: -75, max: 75, step: 0.5, fmt: deg, when: bodyOn },
+      { key: 'b#Bright', label: 'Brightness', min: 0, max: 3, step: 0.01, fmt: fmt(2), when: bodyOn },
+      { key: 'b#ColorA', label: 'Primary', type: 'color', when: bodyOn },
+      { key: 'b#ColorB', label: 'Secondary', type: 'color', when: bodyOn },
+      { key: 'b#Atmo', label: 'Atmosphere', min: 0, max: 1.5, step: 0.01, fmt: fmt(2), when: bodyOn },
+      { key: 'b#Ring', label: 'Rings', color: 'b#RingColor', min: 0, max: 1, step: 0.01, fmt: v => v ? pct(v) : 'Off', when: bodyOn },
+      { key: 'b#RingIn', label: 'Ring Inner Edge', min: 1.05, max: 3, step: 0.01, fmt: v => v.toFixed(2) + '×', when: () => bodyOn() && P[resolveKey('b#Ring')] > 0 },
+      { key: 'b#RingOut', label: 'Ring Outer Edge', min: 1.2, max: 5, step: 0.01, fmt: v => v.toFixed(2) + '×', when: () => bodyOn() && P[resolveKey('b#Ring')] > 0 },
+      { key: 'b#Seed', label: 'Pattern', min: 0, max: 50, step: 0.1, fmt: fmt(1), when: bodyOn },
+    ]],
+    ['Galaxy', [
+      { key: 'gal', label: 'Brightness', min: 0, max: 3, step: 0.01, fmt: v => v ? v.toFixed(2) : 'Off' },
+      { key: 'galSize', label: 'Size', min: 1, max: 90, step: 0.5, fmt: v => v.toFixed(1) + '°', when: () => P.gal > 0 },
+      { key: 'galElev', label: 'Elevation', min: -10, max: 90, step: 0.1, fmt: deg, when: () => P.gal > 0 },
+      { key: 'galHeading', label: 'Heading', min: 0, max: 360, step: 0.5, fmt: deg, when: () => P.gal > 0 },
+      { key: 'galIncl', label: 'Inclination', min: 0, max: 88, step: 0.5, fmt: deg, when: () => P.gal > 0 },
+      { key: 'galAngle', label: 'Rotation', min: -180, max: 180, step: 0.5, fmt: deg, when: () => P.gal > 0 },
+      { key: 'galArms', label: 'Arms', min: 1, max: 5, step: 1, fmt: fmt(0), when: () => P.gal > 0 },
+      { key: 'galTwist', label: 'Winding', min: 0.5, max: 5, step: 0.01, fmt: fmt(2), when: () => P.gal > 0 },
+      { key: 'galCore', label: 'Core Color', type: 'color', when: () => P.gal > 0 },
+      { key: 'galArm', label: 'Arm Color', type: 'color', when: () => P.gal > 0 },
+      { key: 'galSeed', label: 'Structure', min: 0, max: 50, step: 0.1, fmt: fmt(1), when: () => P.gal > 0 },
     ]],
     ['Nebula', [
       { key: 'neb', label: 'Intensity', min: 0, max: 3, step: 0.01, fmt: v => v ? v.toFixed(2) : 'Off' },
@@ -3812,26 +4111,6 @@ const TABS = [
       { key: 'auroraSpeed', label: 'Aurora Flow', min: 0, max: 5, step: 0.01, fmt: v => v.toFixed(2) + '×' },
     ]],
   ]},
-  { id: 'camera', label: 'Camera', sections: [
-    ['View', [
-      { key: 'proj', label: 'Projection', type: 'choice', cols: 4, options: PROJECTIONS.map((p, i) => ({ value: i, title: p.title })),
-        after: () => { P.fov = clamp(P.fov, PROJECTIONS[P.proj].min, PROJECTIONS[P.proj].max); } },
-      { key: 'fov', label: 'Field of View', min: 4, max: 360, step: 0.5, fmt: v => P.proj === 0 ? `${v.toFixed(0)}° · ${(21.63 / Math.tan(v * DEG / 2)).toFixed(0)}mm` : deg(v),
-        range: () => [PROJECTIONS[P.proj].min, PROJECTIONS[P.proj].max], when: () => P.proj !== 3 },
-      { key: 'heading', label: 'Heading', min: 0, max: 360, step: 0.5, fmt: deg },
-      { key: 'pitch', label: 'Pitch', min: -90, max: 90, step: 0.5, fmt: deg, when: () => P.proj !== 3 },
-      { key: 'roll', label: 'Roll', min: -180, max: 180, step: 0.5, fmt: deg, when: () => P.proj !== 3 },
-    ]],
-    ['Lens', [
-      { key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.01, fmt: fmt(2) },
-      { key: 'grain', label: 'Film Grain', min: 0, max: 1, step: 0.01, fmt: fmt(2) },
-      { key: 'grainSize', label: 'Grain Size', min: 0.3, max: 4, step: 0.05, fmt: fmt(2), when: () => P.grain > 0 },
-    ]],
-    ['Preview', [
-      { label: 'Preview Resolution', min: 0.35, max: 1, step: 0.05, fmt: pct,
-        get: () => VIEW.scale, set: v => { VIEW.scale = v; store('horizon-view', VIEW); } },
-    ]],
-  ]},
   { id: 'color', label: 'Color', sections: [
     ['Tone', [
       { key: 'ev', label: 'Exposure', min: -5, max: 5, step: 0.05, fmt: v => signed(2)(v) + ' EV' },
@@ -3852,10 +4131,27 @@ const TABS = [
       { key: 'filterAmt', label: 'Color Filter', color: 'filter', min: 0, max: 1, step: 0.01, fmt: fmt(2) },
     ]],
   ]},
-  { id: 'capture', label: 'Capture', sections: [
+];
+
+// Camera and capture settings share one submenu, opened by the Capture button.
+const CAPTURE_MENU = { id: 'capture', label: 'Camera & Capture', sections: [
     ['Frame', [
       { type: 'custom', build: buildAspect },
       { type: 'custom', build: buildDevice },
+    ]],
+    ['View', [
+      { key: 'proj', label: 'Projection', type: 'choice', cols: 4, options: PROJECTIONS.map((p, i) => ({ value: i, title: p.title })),
+        after: () => { P.fov = clamp(P.fov, PROJECTIONS[P.proj].min, PROJECTIONS[P.proj].max); } },
+      { key: 'fov', label: 'Field of View', min: 4, max: 360, step: 0.5, fmt: v => P.proj === 0 ? `${v.toFixed(0)}° · ${(21.63 / Math.tan(v * DEG / 2)).toFixed(0)}mm` : deg(v),
+        range: () => [PROJECTIONS[P.proj].min, PROJECTIONS[P.proj].max], when: () => P.proj !== 3 },
+      { key: 'heading', label: 'Heading', min: 0, max: 360, step: 0.5, fmt: deg },
+      { key: 'pitch', label: 'Pitch', min: -90, max: 90, step: 0.5, fmt: deg, when: () => P.proj !== 3 },
+      { key: 'roll', label: 'Roll', min: -180, max: 180, step: 0.5, fmt: deg, when: () => P.proj !== 3 },
+    ]],
+    ['Lens', [
+      { key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.01, fmt: fmt(2) },
+      { key: 'grain', label: 'Film Grain', min: 0, max: 1, step: 0.01, fmt: fmt(2) },
+      { key: 'grainSize', label: 'Grain Size', min: 0.3, max: 4, step: 0.05, fmt: fmt(2), when: () => P.grain > 0 },
     ]],
     ['Resolution', [
       { type: 'custom', build: buildSize },
@@ -3879,8 +4175,11 @@ const TABS = [
       { label: 'Thirds Grid', type: 'toggle', get: () => C.grid, set: v => setCapture({ grid: v }) },
       { label: 'Pixel Loupe', type: 'toggle', get: () => C.loupe, set: v => { C.loupe = v; } },
     ]],
-  ]},
-];
+    ['Preview', [
+      { label: 'Preview Resolution', min: 0.35, max: 1, step: 0.05, fmt: pct,
+        get: () => VIEW.scale, set: v => { VIEW.scale = v; store('horizon-view', VIEW); } },
+    ]],
+]};
 
 let tab = store('horizon-tab') || 'sky';
 const refreshers = [];
@@ -3945,6 +4244,7 @@ function syncUI() {
   frameEl.classList.toggle('grid', C.on && C.grid);
   bar.classList.toggle('capture', C.on);
   $('credit').classList.toggle('away', C.on || !!job);
+  placeBar();
   if (!C.on || !C.loupe) loupeEl.classList.remove('on');
 }
 
@@ -4055,9 +4355,47 @@ function colorInput(key) {
   const input = document.createElement('input');
   input.type = 'color';
   input.id = 'c-' + key;
-  input.oninput = () => { P[key] = input.value; changed(); };
-  refreshers.push(() => { input.value = P[key]; });
+  input.oninput = () => { P[resolveKey(key)] = input.value; changed(); };
+  refreshers.push(() => { input.value = P[resolveKey(key)]; });
   return input;
+}
+
+function buildBandStyles(body) {
+  const row = el('div', 'row', body);
+  el('div', 'lab', row, 'Style');
+  const seg = el('div', 'seg c3', row);
+  for (const [name, values] of BAND_STYLES) {
+    const b = el('button', 'btn', seg, name);
+    b.onclick = () => { Object.assign(P, values); if (!P.mw) P.mw = 1; changed(); };
+    refreshers.push(() => b.classList.toggle('active', P.mw > 0 && Object.entries(values).every(([k, v]) => P[k] === v)));
+  }
+}
+
+function buildBodyPicker(body) {
+  const seg = el('div', 'seg c2', el('div', 'row', body));
+  for (let i = 0; i < 2; i++) {
+    const b = el('button', 'btn', seg);
+    b.onclick = () => { bodySel = i; syncUI(); };
+    refreshers.push(() => {
+      b.classList.toggle('active', bodySel === i);
+      b.textContent = P[`b${i}On`] ? BODY_TYPES[P[`b${i}Type`]][0] : `Body ${i + 1}`;
+    });
+  }
+}
+
+function buildBodyTypes(body) {
+  const row = el('div', 'row', body);
+  el('div', 'lab', row, 'Kind');
+  const seg = el('div', 'seg c3', row);
+  BODY_TYPES.forEach(([name, values], type) => {
+    const b = el('button', 'btn', seg, name);
+    b.onclick = () => {
+      for (const [k, v] of Object.entries(values)) P[`b${bodySel}${k}`] = v;
+      Object.assign(P, { [`b${bodySel}Type`]: type, [`b${bodySel}On`]: true });
+      changed();
+    };
+    refreshers.push(() => b.classList.toggle('active', P[`b${bodySel}Type`] === type));
+  });
 }
 
 function buildAspect(body) {
@@ -4118,22 +4456,26 @@ function buildSize(body) {
   });
 }
 
-function showTab(id) {
-  tab = id;
-  store('horizon-tab', id);
-  for (const [k, b] of Object.entries(tabButtons)) b.classList.toggle('active', k === id);
+function renderMenu(menu) {
   refreshers.length = 0;
   refreshers.push(...staticRefreshers);
   tabBody.textContent = '';
-  const t = TABS.find(t => t.id === id);
-  for (const [title, items] of t.sections) {
+  tabBody.scrollTop = 0;
+  for (const [title, items] of menu.sections) {
     const sec = el('div', 'sec', tabBody);
     el('button', 'sh', sec, title).onclick = () => sec.classList.toggle('closed');
     const body = el('div', 'body', sec);
     for (const it of items) buildItem(it, body);
   }
-  if (id === 'capture' && !C.on) setCaptureMode(true);
   syncUI();
+}
+
+function showTab(id) {
+  tab = id;
+  store('horizon-tab', id);
+  for (const [k, b] of Object.entries(tabButtons)) b.classList.toggle('active', k === id);
+  tabButtons[id].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (!C.on) renderMenu(TABS.find(t => t.id === id));
 }
 
 const staticRefreshers = [];
@@ -4220,11 +4562,27 @@ function buildUI() {
   buildLookStrip();
 
   const tabs = el('nav', 'tabs', panel);
+  tabs.id = 'tabs';
   for (const t of TABS) {
     const b = el('button', 'tab', tabs);
     b.innerHTML = svg(ICONS[t.id]) + `<span>${t.label}</span>`;
     b.onclick = () => showTab(t.id);
     tabButtons[t.id] = b;
+  }
+  const sub = el('div', 'subhead', panel);
+  sub.id = 'subhead';
+  sub.hidden = true;
+  const back = el('button', 'icon', sub);
+  back.setAttribute('aria-label', 'Leave capture');
+  back.innerHTML = svg('<path d="M10 3.5L5.5 8l4.5 4.5"/>');
+  back.onclick = () => setCaptureMode(false);
+  el('span', null, sub, CAPTURE_MENU.label);
+  for (const strip of [tabs, $('looks')]) {
+    strip.addEventListener('wheel', e => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      strip.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }, { passive: false });
   }
   tabBody = el('div', 'tabbody', panel);
   const foot = el('div', 'foot', panel);
@@ -4279,10 +4637,12 @@ function buildUI() {
   showTab(TABS.some(t => t.id === tab) ? tab : 'sky');
 }
 
+// Capture mode swaps the tab strip for the Camera & Capture submenu.
 function setCaptureMode(on) {
   C.on = on;
-  if (!on && tab === 'capture') showTab('sky');
-  syncUI();
+  $('tabs').hidden = on;
+  $('subhead').hidden = !on;
+  renderMenu(on ? CAPTURE_MENU : TABS.find(t => t.id === tab));
 }
 
 // ─── Input ──────────────────────────────────────────────────────────────────
