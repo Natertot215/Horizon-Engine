@@ -174,8 +174,10 @@ select option { background: #111; }
 #sheet img, #sheet video { display: block; max-width: 100%; max-height: 64vh; object-fit: contain; border-radius: 8px; background: #000; margin: 0 auto; }
 #credit {
   position: fixed; left: 16px; bottom: 18px; display: grid; gap: 3px; z-index: 2;
-  font-size: 10.5px; color: var(--dim); letter-spacing: .02em; pointer-events: none;
+  font-size: 10.5px; color: var(--dim); letter-spacing: .02em; pointer-events: none; transition: opacity .3s;
 }
+#credit.away { opacity: 0; }
+#credit.away a { pointer-events: none; }
 #credit a { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); text-decoration: none; pointer-events: auto; width: max-content; opacity: .82; }
 #credit a:hover { opacity: 1; }
 #toast {
@@ -188,7 +190,9 @@ select option { background: #111; }
 
 @media (max-width: 700px) {
   #panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; height: 48%; }
-  #credit { top: 60px; bottom: auto; left: 14px; }
+  #credit { top: 58px; right: 12px; bottom: auto; left: auto; display: flex; align-items: center; gap: 5px; font-size: 9px; }
+  #credit svg { width: 10px; height: 10px; }
+  #credit .gh { display: none; }
   #bar { bottom: auto; top: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -217,9 +221,9 @@ select option { background: #111; }
   <div class="row-b"><button class="btn" id="sheet-close">Close</button><button class="btn primary" id="sheet-save">Download</button></div>
 </div></div>
 <footer id="credit">
-  <a href="https://github.com/Natertot215/Horizon-Engine" target="_blank" rel="noopener">
+  <a href="https://github.com/Natertot215/Horizon-Engine" target="_blank" rel="noopener" aria-label="Horizon Engine on GitHub">
     <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.66 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 0z"/></svg>
-    GitHub
+    <span class="gh">GitHub</span>
   </a>
   <span>Created By Nathan Taichman</span>
 </footer>
@@ -301,8 +305,10 @@ const DEFAULTS = {
   surface: 1, eyeHeight: 2, surfScale: 1, surfColorA: '#0a1820', surfColorB: '#1f5a4e', surfWaves: 0.35, surfReflect: 1,
   surfWind: 60, surfSparkle: 0.5, surfMotion: 1, surfRows: 65, surfFoam: 0.5,
   grassHeight: 0.45, grassDensity: 1, grassWidth: 1, grassLean: 0.5, grassDry: 0.15, flowers: 0, flowerColor: '#f4e7a1',
+  trees: 0, treeType: 0, treeHeight: 14, treeNear: 30, treeFar: 140, treeHeading: 200, treeSpread: 70, treeSeed: 1,
+  treeColor: '#3d5a24', treeAutumn: 0, treeFoliage: 1, treeWidth: 1,
   land: 0, landHeight: 3, landRough: 0.5, landLayers: 3, landDepth: 1, landHeading: 0, landSeed: 1,
-  landColor: '#2a2d36', cityLights: 0.5, cityColor: '#ffbe76',
+  landColor: '#2a2d36', cityLights: 0.5, cityColor: '#ffbe76', landSnow: 0, forestMix: 0.6, forestDensity: 0.85,
   peak: 0, peakHeading: 200, peakWidth: 14, peakSnow: 0.35,
   fog: 0, fogHeight: 40, fogGlow: 0.3, fogColor: '#c9cfe0', haze: 0.35,
   motionSky: true, motionClouds: true, windMul: 1, morphMul: 1, twinkle: 0.3, auroraSpeed: 1,
@@ -407,7 +413,7 @@ const PRESETS = [
     nightBright: 1.6, nightZenith: '#151640', nightHorizon: '#5d4f8f', nightCurve: 0.5, nightVibrance: 0.3, airglow: 0.02, lpStrength: 0,
     starDensity: 0.7, starDepth: 0.85, starBright: 1.6, starSize: 0.75, starColor: 0.3,
     ...LAKE, surfColorA: '#0d1424', surfColorB: '#0d1424', surfWaves: 0.2,
-    land: 3, landHeight: 1.7, landLayers: 2, landColor: '#11131b',
+    land: 3, landHeight: 1.7, landLayers: 2, landColor: '#11131b', forestMix: 1, forestDensity: 0.95,
     peak: 7, peakHeading: 205, peakWidth: 16, peakSnow: 0.42,
     fog: 0.5, fogHeight: 15, fogGlow: 0.8, fogColor: '#c3c6e8', haze: 0.45,
     ev: 0.3, tone: 1, contrast: 1.05, saturation: 1.1,
@@ -926,6 +932,8 @@ vec3 faceDir(int face, vec2 uv) {
 
 float twinkleAmt = 0.0;
 bool gMirror = false; // tracing a reflection: sun and moon disks come from glint() instead
+bool gNoLand = false; // reflection ray that would really meet another wave
+float gShade = 1.0;   // tree shadow on the patch of ground being shaded
 
 float starSigma(float fpOut) { return uStars.w * 4e-4 * length(uImg) * fpOut; }
 
@@ -1332,13 +1340,13 @@ float ridgeNoise(float a, float freq, float seed, float rate) {
 
 float wrapAngle(float a) { return mod(a + PI, TAU) - PI; }
 
-struct Ridge { float h; float cell; float u; float top; };
+struct Ridge { float h; float hb; float cell; float u; float top; };
 
 Ridge ridgeAt(int L, float az, float fp) {
   float a = az + uLandB.y + float(L) * 1.7;
   float seed = uLandB.z + float(L) * 2.31;
   float type = uLand.x, rough = uLand.z;
-  Ridge r = Ridge(0.0, 0.0, 0.0, 0.0);
+  Ridge r = Ridge(0.0, 0.0, 0.0, 0.0, 0.0);
   float h;
   if (type < 1.5) {
     h = smoothstep(0.2, 0.85, ridgeNoise(a, 2.0, seed, fp) * 0.65 + ridgeNoise(a, 6.0, seed + 0.4, fp) * 0.35);
@@ -1349,14 +1357,8 @@ Ridge ridgeAt(int L, float az, float fp) {
     float r3 = 1.0 - abs(ridgeNoise(a, 26.0, seed + 0.8, fp) * 2.0 - 1.0);
     h = r1 * r1 * 0.6 + r2 * r2 * (0.25 + 0.15 * rough) + r3 * 0.15 * rough;
   } else if (type < 3.5) {
-    float base = smoothstep(0.25, 0.9, ridgeNoise(a, 3.0, seed, fp)) * 0.45;
-    float N = 260.0 * LAND_DIST[L] / uLand.y;
-    float x = a * N, ci = floor(x), f = fract(x) - 0.5;
-    uint hh = hash3u(uvec3(uint(int(ci) + 1000000), uint(L), 17u));
-    float th = 0.55 + 0.45 * rnd(hh), tw = 0.75 + 0.5 * rnd(hh);
-    float tree = max(0.0, 1.0 - abs(f) * 2.0 / tw) * th;
-    tree = mix(tree, 0.3, smoothstep(0.5, 2.0, fp * N));
-    h = base + tree * (0.35 + 0.25 * rough);
+    // Rolling ground under the forest; the trees themselves come from forestCover.
+    h = smoothstep(0.25, 0.9, ridgeNoise(a, 3.0, seed, fp)) * 0.3;
   } else {
     float N = 48.0 * LAND_DIST[L];
     float x = a * N, ci = floor(x), f = fract(x);
@@ -1369,6 +1371,7 @@ Ridge ridgeAt(int L, float az, float fp) {
     r.u = f;
     h = bh;
   }
+  r.hb = h * uLand.y * DEG * LAND_SCALE[L];
   if (L == 1 && uPeak.x > 0.0) {
     float dz = abs(wrapAngle(az - uPeak.y)) / max(uPeak.z, 1e-3);
     float p = pow(max(0.0, 1.0 - dz), 1.7) * (uPeak.x / max(uLand.y, 0.01)) / LAND_SCALE[1];
@@ -1379,11 +1382,103 @@ Ridge ridgeAt(int L, float az, float fp) {
   return r;
 }
 
-vec3 shadeLand(int L, vec3 d, float az, float el, Ridge rg, vec3 amb, float fp) {
+// Forest: individual trees standing on the base ground of layer L. Returns coverage; n is a
+// pseudo-normal in (right, up, toward viewer) and tone a per-tree brightness. Trees smaller than
+// a few pixels merge into a soft canopy line.
+float forestCover(int L, float az, float el, float baseH, float fp, out vec3 n, out float tone) {
+  float hT = uLand.y * DEG * LAND_SCALE[L] * 0.62, cw = hT * 0.22;
+  float a = az + uLandB.y + float(L) * 1.7, ci = floor(a / cw);
+  float lod = smoothstep(2.5, 7.0, hT / fp);
+  float cover = clamp((baseH + 0.62 * hT - el) / fp + 0.5, 0.0, 1.0) * (1.0 - lod);
+  n = vec3(0.0, 0.35, 0.94);
+  tone = 1.0;
+  if (lod <= 0.0) return cover;
+  for (int k = -2; k <= 2; k++) {
+    float c = ci + float(k);
+    uint h = hash3u(uvec3(uint(int(c) + 1000000), uint(L), 77u + uint(uLandB.z * 10.0)));
+    if (rnd(h) > uLandC.w) continue;
+    float ac = (c + 0.1 + 0.8 * rnd(h)) * cw;
+    float ht = hT * (0.55 + 0.45 * rnd(h)) * (0.7 + 0.6 * valueNoise(vec2(c * 0.07, float(L) * 3.1 + uLandB.z)));
+    float X = (a - ac) / ht, Y = (el - baseH) / ht + 0.1;
+    if (Y < 0.0 || Y > 1.2 || abs(X) > 0.6) continue;
+    float sd;
+    vec3 nn;
+    if (rnd(h) < uLandC.z) {
+      // Conifer spire with ragged branch tiers.
+      float tier = fract(Y * (7.0 + 4.0 * rnd(h)) + rnd(h));
+      float rw = 0.19 * pow(max(1.0 - Y, 0.0), 0.88) * (0.68 + 0.32 * (1.0 - tier)) * (0.85 + 0.3 * rnd(h));
+      rw *= 0.9 + 0.2 * valueNoise(vec2(Y * 30.0, c));
+      sd = Y > 1.0 ? length(vec2(X, Y - 1.0)) : abs(X) - rw;
+      float u = clamp(X / max(rw, 1e-3), -1.0, 1.0);
+      nn = vec3(u * 0.85, 0.3 + 0.3 * tier, sqrt(max(1.0 - u * u, 0.0)) * 0.6);
+    } else {
+      // Broadleaf: three lobes over a short trunk.
+      sd = max(abs(X) - 0.025, abs(Y - 0.2) - 0.2);
+      nn = vec3(0.0, 0.2, 1.0);
+      for (int j = 0; j < 3; j++) {
+        float fj = float(j);
+        vec2 cc = vec2((fj - 1.0) * 0.2 * (0.8 + 0.4 * rnd(h)), 0.64 - abs(fj - 1.0) * 0.12 + 0.06 * rnd(h));
+        float rr = (j == 1 ? 0.3 : 0.24) * (0.85 + 0.3 * rnd(h));
+        vec2 dq = vec2(X, Y) - cc;
+        float dj = length(dq) - rr * (0.9 + 0.2 * valueNoise(vec2(atan(dq.y, dq.x) * 3.0, c + fj)));
+        if (dj < sd) { sd = dj; vec2 u2 = dq / rr; nn = vec3(u2 * 0.9, sqrt(max(1.0 - dot(u2, u2), 0.0))); }
+      }
+    }
+    float cv = clamp(0.5 - sd * ht / fp, 0.0, 1.0) * lod;
+    if (cv > cover) { cover = cv; n = normalize(nn); tone = 0.7 + 0.6 * rnd(h); }
+  }
+  return cover;
+}
+
+// Relief for a mountain face below its ridge: gullies and spurs from a ridged noise field over
+// (azimuth, elevation). Returns the world normal; v is the field value for snow and rock streaks.
+vec3 faceRelief(int L, vec3 d, float az, float el, float fp, out float v) {
+  float km = LAND_DIST[L] * uLandB.x;
+  float a = az + uLandB.y + float(L) * 1.7;
+  vec3 o = vec3(0.31, 0.17, uLandB.z * 0.173 + float(L) * 0.41);
+  // Features scale with the range's apparent height (about 0.4 of it across), stretched down the
+  // fall line so gullies run vertically. The noise has 8 features per texture unit.
+  vec2 g = vec2(0.0);
+  float K = 1.0 / (3.2 * uLand.y * DEG * LAND_SCALE[L]), amp = 1.0, tot = 0.0;
+  v = 0.0;
+  for (int i = 0; i < 2; i++) {
+    vec3 p = vec3(cos(a) * K, sin(a) * K, el * K * 0.5) + o;
+    vec3 ta = vec3(-sin(a), cos(a), 0.0) * 0.012, te = vec3(0.0, 0.0, 0.012);
+    float r = fp * K;
+    float f0 = 1.0 - abs(nz(p, r).a * 2.0 - 1.0);
+    float fa = 1.0 - abs(nz(p + ta, r).a * 2.0 - 1.0);
+    float fe = 1.0 - abs(nz(p + te, r).a * 2.0 - 1.0);
+    g += vec2(fa - f0, (fe - f0) * 0.5) / 0.12 * amp;
+    v += f0 * amp;
+    tot += amp;
+    amp *= 0.45;
+    K *= 3.3;
+    o += vec3(1.7, 0.9, 2.3);
+  }
+  v /= tot;
+  vec3 hd = normalize(vec3(d.x, 0.0, d.z) + 1e-5), right = vec3(hd.z, 0.0, -hd.x);
+  float k = 0.9 + 0.8 * uLand.z;
+  return normalize(-hd * 0.75 + vec3(0.0, 0.45, 0.0) - right * g.x * k + vec3(0.0, 1.0, 0.0) * (v - 0.5) * 0.9 - vec3(0.0, g.y, 0.0) * 0.3 * k);
+}
+
+vec3 shadeLand(int L, vec3 d, float az, float el, Ridge rg, vec3 amb, float fp, float tree, vec3 tn, float tone) {
   float km = LAND_DIST[L] * uLandB.x;
   vec3 nrm = normalize(vec3(-d.x, 0.9, -d.z));
   vec3 albedo = uLandColor;
   vec3 emit = vec3(0.0);
+  vec3 hd = normalize(vec3(d.x, 0.0, d.z) + 1e-5), right = vec3(hd.z, 0.0, -hd.x);
+  if (uLand.x > 0.5 && uLand.x < 2.5 && rg.top < 0.5) {
+    float v;
+    nrm = faceRelief(L, d, az, el, fp, v);
+    float rel = el / max(rg.h, 1e-4);
+    albedo *= (0.8 + 0.4 * v) * (0.95 + 0.05 * sin(el / max(rg.h, 1e-4) * 40.0 + v * 6.0));
+    // Snow holds above the snow line on gentler ground; cliffs and gully walls stay rock.
+    float snow = smoothstep(-0.08, 0.12, rel + (v - 0.5) * 0.6 - (1.0 - uLandC.x)) * smoothstep(0.3, 0.52, nrm.y) * step(0.001, uLandC.x);
+    albedo = mix(albedo, vec3(0.8, 0.83, 0.9), snow);
+  } else if (uLand.x > 2.5 && uLand.x < 3.5 && tree > 0.0) {
+    nrm = normalize(right * tn.x + vec3(0.0, tn.y, 0.0) - hd * tn.z);
+    albedo *= tone;
+  }
   if (rg.top > 0.5) {
     float rel = el / max(rg.h, 1e-4);
     float side = wrapAngle(az - uPeak.y);
@@ -1404,6 +1499,11 @@ vec3 shadeLand(int L, vec3 d, float az, float el, Ridge rg, vec3 amb, float fp) 
     emit = uCityColor * mix(win * lit, uLandB.w * 0.6 * 0.25 * 0.78, lod) * 2.5 * uNightScale;
   }
   vec3 c = albedo * (directLight(nrm) + amb * 0.85) + emit;
+  if (uLand.x > 2.5 && uLand.x < 3.5) {
+    // Backlit foliage glows at the rim of each crown.
+    float rim = pow(max(dot(d, uSunDir), 0.0), 6.0) * (1.0 - abs(tn.z)) * tree;
+    c += albedo * vec3(1.1, 1.3, 0.6) * uSunScale * transmittance(OBS, uSunDir.y) * rim * 0.5;
+  }
   c = mix(horizonSky(d), c, hazeT(km));
   return applyFog(c, d, km * 1000.0, amb);
 }
@@ -1490,19 +1590,19 @@ vec2 worley2(vec2 x) {
   return sqrt(vec2(f1, f2));
 }
 
-vec3 viewRadiance(vec3 d, float fp, float fpOut, float jitter, vec3 amb);
-
-vec3 shadeWater(vec3 d, float Dm, float rate, float fp, float fpOut, float jitter, vec3 amb) {
+// Water at the point the view ray d meets it: body scattering, sun and moon glints and foam.
+// F is the weight left for the reflected scene and r its direction; under marks facets that
+// reflect below the horizon (they would see another wave, i.e. more sky, not the shore).
+vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F, out vec3 r, out bool under) {
   vec2 P = d.xz * Dm;
   vec3 n;
   vec2 w = waves(P, normalize(d.xz + 1e-6), fp * Dm, max(-d.y, 0.003), n);
   vec3 v = -d;
-  float F = (0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0)) * uSurfB.a;
-  vec3 r = reflect(d, n);
-  gMirror = true;
-  vec3 sky = viewRadiance(normalize(vec3(r.x, max(r.y, 5e-4), r.z)), fp, fpOut, jitter, amb);
-  gMirror = false;
-  vec3 sunE = uSunScale * transmittance(OBS, uSunDir.y);
+  F = (0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0)) * uSurfB.a;
+  r = reflect(d, n);
+  under = r.y < 1e-3;
+  r = normalize(vec3(r.x, max(r.y, 1e-3), r.z));
+  vec3 sunE = uSunScale * transmittance(OBS, uSunDir.y) * gShade;
   vec3 spec = sunE * glint(n, v, uSunDir, w.x + 2e-5 + uSunDisk.y * uSunDisk.y);
   if (uMoon.x > 0.0) {
     // The disk is drawn far below its true radiance so its face stays visible; the glitter path
@@ -1510,7 +1610,7 @@ vec3 shadeWater(vec3 d, float Dm, float rate, float fp, float fpOut, float jitte
     vec3 Tm = mix(vec3(1.0), transmittance(OBS, max(uMoonDir.y, 0.0)) / transmittance(OBS, 1.0), uStarLook.w);
     spec += Tm * uMoon.z * 250.0 * PI * uMoon.y * uMoon.y * (0.5 + 0.5 * uMoonLight.z) * glint(n, v, uMoonDir, w.x + 2e-5 + uMoon.y * uMoon.y);
   }
-  vec3 E = directLight(vec3(0.0, 1.0, 0.0)) + amb;
+  vec3 E = directLight(vec3(0.0, 1.0, 0.0)) * gShade + amb;
   vec3 body;
   if (int(uSurf.x) == 2) {
     // Salt crust under a thin film: polygonal ridges break through the mirror.
@@ -1529,15 +1629,16 @@ vec3 shadeWater(vec3 d, float Dm, float rate, float fp, float fpOut, float jitte
     float fwd = pow(max(dot(dh, sh), 0.0), 4.0) * smoothstep(-0.1, 0.9, w.y);
     body = uSurfA.rgb * E + uSurfB.rgb * sunE * fwd * 0.02;
   }
-  vec3 col = body * (1.0 - F) + sky * F + spec * uSurfB.a;
+  vec3 col = body * (1.0 - F) + spec * uSurfB.a;
   if (uWaveFx.y > 0.0) {
     vec2 wd = vec2(sin(uSurfC.x), cos(uSurfC.x));
     vec2 q = vec2(dot(P, wd), dot(P, vec2(wd.y, -wd.x))) / uSurf.z;
     float t = uTime.y * uSurfC.z;
     float streak = nz(vec3(q * vec2(0.012, 0.06) + vec2(-t * 0.004, 0.0), 0.37), rate * 0.06 / uSurf.z).r;
     float speck = nz(vec3(q * 0.35, 0.71 + t * 0.002), rate * 0.35 / uSurf.z).g;
-    float foam = smoothstep(0.62, 0.95, w.y + (streak - 0.5) * 0.7 + (speck - 0.5) * 0.3) * uWaveFx.y;
-    col = mix(col, vec3(0.82) * E, clamp(foam, 0.0, 1.0));
+    float foam = clamp(smoothstep(0.62, 0.95, w.y + (streak - 0.5) * 0.7 + (speck - 0.5) * 0.3) * uWaveFx.y, 0.0, 1.0);
+    col = mix(col, vec3(0.82) * E, foam);
+    F *= 1.0 - foam;
   }
   return col;
 }
@@ -1662,7 +1763,7 @@ vec3 grassLight(vec3 alb, vec3 n, vec3 d, float y, float gap, vec3 amb) {
   vec3 lit = ndl > 0.0 ? alb * ndl : alb * vec3(1.3, 1.5, 0.55) * (-ndl);
   vec3 hv = normalize(L - d);
   float spec = ndl > 0.0 ? (0.04 + 0.96 * pow(1.0 - max(dot(-d, hv), 0.0), 5.0)) * 2.3 * pow(max(dot(n, hv), 0.0), 50.0) * ndl : 0.0;
-  col += (lit / PI + spec) * gSunE * shadow;
+  col += (lit / PI + spec) * gSunE * shadow * gShade;
   if (uMoonScale > 0.0) col += alb * max(dot(n, uMoonDir), 0.0) / PI * gMoonE * shadow;
   return col;
 }
@@ -1705,7 +1806,7 @@ vec3 grassGround(vec2 P, float rate, vec3 amb) {
   float n1 = nz(vec3(P / 0.6 * 0.1, 0.61), rate / 0.6 * 0.1).r;
   vec3 alb = gWheat ? vec3(0.09, 0.065, 0.04) * (0.7 + 0.6 * n1)
                     : mix(uSurfA.rgb * 0.5, vec3(0.05, 0.04, 0.02), 0.45) * (0.6 + 0.8 * n1);
-  float shadow = exp(-gSigma * uGrass.x / max(uSunDir.y, 0.04));
+  float shadow = exp(-gSigma * uGrass.x / max(uSunDir.y, 0.04)) * gShade;
   return alb * (gSunE * max(uSunDir.y, 0.0) * shadow / PI + amb * (gWheat ? 0.4 : 0.2));
 }
 
@@ -1819,20 +1920,247 @@ void grassSetup() {
   gMoonE = uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0));
 }
 
-vec3 shadeGrass(vec3 d, float Dm, float fp, float jitter, vec3 amb) {
-  grassSetup();
-  float E = uSurf.y, H = uGrass.x;
-  float t0 = E > 1.3 * H ? (E - 1.3 * H) / -d.y : 0.0;
-  // Trace blades until they shrink to a fraction of a pixel or the footprint nears a cell width;
-  // the hand-off distance is dithered per pixel so it never forms a line.
-  float tRes = min(uGrass.z * 10.0, 0.8 * gCell.y) / (0.75 * fp) * (0.75 + 0.5 * jitter) * uGrassB.z;
-  vec4 g = vec4(0.0);
-  float tEnd = t0;
-  if (t0 < tRes) g = grassTrace(d, t0, min(Dm, tRes), tRes, fp, amb, tEnd);
-  float tc = clamp(max(t0, tEnd), 0.7 * tRes, Dm);
-  vec3 rest = tEnd >= Dm - 1e-3 ? grassGround(d.xz * Dm, fp * Dm * inversesqrt(max(-d.y, 0.02)), amb)
-                                : grassCanopy(d, d.xz * tc, fp * tc * inversesqrt(max(-d.y, 0.02)), amb);
-  return g.rgb + (1.0 - g.a) * rest;
+// ── Trees ──
+
+// Foreground trees stand on the ground plane. Crowns are raymarched foliage volumes (lumpy
+// ellipsoids of leaf clusters, or tiered cones for conifers); trunks and limbs are capsules.
+
+const int MAX_TREES = 16;
+
+struct Tree { vec3 base; vec3 c; vec3 R; float h; float seed; int type; };
+
+Tree treeAt(int i) {
+  vec4 T = uTree[i];
+  Tree tr;
+  tr.base = vec3(T.x, -uSurf.y, T.y);
+  tr.h = T.z;
+  tr.type = int(T.w / 1000.0);
+  tr.seed = mod(T.w, 1000.0);
+  float w = uTreeLook.z * (0.85 + 0.3 * fract(tr.seed * 0.618));
+  if (tr.type == 1) { tr.c = vec3(0.0, 0.55, 0.0) * tr.h; tr.R = vec3(0.2 * w, 0.46, 0.2 * w) * tr.h; }
+  else if (tr.type == 2) { tr.c = vec3(0.0, 0.64, 0.0) * tr.h; tr.R = vec3(0.24 * w, 0.34, 0.24 * w) * tr.h; }
+  else { tr.c = vec3(0.0, 0.6, 0.0) * tr.h; tr.R = vec3(0.44 * w, 0.37, 0.44 * w) * tr.h; }
+  return tr;
+}
+
+// A broadleaf crown is the union of a main lobe and two offset side lobes.
+float crownShape(Tree tr, vec3 l) {
+  vec3 q = (l - tr.c) / tr.R;
+  float s = 1.0 - length(q);
+  for (int k = 0; k < 2; k++) {
+    float a = tr.seed * 1.7 + float(k) * 2.6;
+    vec3 o = vec3(cos(a) * 0.48, 0.18 - 0.36 * float(k), sin(a) * 0.48);
+    s = max(s, 1.0 - length((q - o) / (0.62 - 0.08 * float(k))));
+  }
+  return s;
+}
+
+// Entry and exit of a ray through an axis-aligned ellipsoid (centre c, radii R).
+vec2 ellipsoidSpan(vec3 ro, vec3 rd, vec3 c, vec3 R) {
+  vec3 o = (ro - c) / R, v = rd / R;
+  float a = dot(v, v), b = dot(o, v), k = dot(o, o) - 1.0, disc = b * b - a * k;
+  if (disc < 0.0) return vec2(1e9, -1e9);
+  float s = sqrt(disc);
+  return vec2(-b - s, -b + s) / a;
+}
+
+float capsule(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r) {
+  vec3 ba = pb - pa, oa = ro - pa;
+  float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
+  float a = baba - bard * bard, b = baba * rdoa - baoa * bard, c = baba * oaoa - baoa * baoa - r * r * baba;
+  float h = b * b - a * c;
+  if (h >= 0.0) {
+    float t = (-b - sqrt(h)) / a, y = baoa + t * bard;
+    if (y > 0.0 && y < baba) return t;
+    vec3 oc = y <= 0.0 ? oa : ro - pb;
+    b = dot(rd, oc);
+    c = dot(oc, oc) - r * r;
+    h = b * b - c;
+    if (h > 0.0) return -b - sqrt(h);
+  }
+  return -1.0;
+}
+
+vec3 limbEnd(Tree tr, int k) {
+  float a = tr.seed * 2.39 + float(k) * 1.75 + 0.4 * sin(tr.seed + float(k));
+  float y = tr.c.y - tr.R.y * (0.1 - 0.12 * float(k & 1));
+  return tr.base + vec3(cos(a) * tr.R.x * 0.72, y, sin(a) * tr.R.z * 0.72);
+}
+
+// Nearest trunk or limb hit; n is the bark normal, v the height along the trunk (0..1).
+float treeWood(Tree tr, vec3 ro, vec3 rd, out vec3 n, out float v) {
+  float rt = tr.h * (tr.type == 1 ? 0.016 : tr.type == 2 ? 0.014 : 0.024);
+  vec3 top = tr.base + vec3(0.0, tr.type == 1 ? 0.7 * tr.h : tr.c.y, 0.0);
+  vec3 pa = tr.base - vec3(0.0, 0.5, 0.0), pb = top;
+  float t = capsule(ro, rd, pa, pb, rt), best = t > 0.0 ? t : 1e9;
+  float rr = rt;
+  if (tr.type != 1) {
+    vec3 fork = tr.base + vec3(0.0, tr.c.y - 0.75 * tr.R.y, 0.0);
+    for (int k = 0; k < 4; k++) {
+      vec3 e = limbEnd(tr, k);
+      float tk = capsule(ro, rd, fork, e, rt * 0.45);
+      if (tk > 0.0 && tk < best) { best = tk; pa = fork; pb = e; rr = rt * 0.45; }
+    }
+  }
+  if (best > 1e8) return -1.0;
+  vec3 p = ro + rd * best, ba = pb - pa;
+  float h = clamp(dot(p - pa, ba) / dot(ba, ba), 0.0, 1.0);
+  n = (p - pa - ba * h) / rr;
+  v = (p.y - tr.base.y) / tr.h;
+  return best;
+}
+
+// Returns (density, cluster signal): the signal is high in the core of a leaf clump.
+vec2 crownDensity(Tree tr, vec3 p, float rate) {
+  vec3 l = p - tr.base;
+  if (tr.type == 1) {
+    // Conifer: a cone of drooping branch tiers whose tips reach out at uneven lengths.
+    float yy = (l.y - 0.1 * tr.h) / (0.9 * tr.h);
+    if (yy < 0.0 || yy > 1.0) return vec2(0.0);
+    float rr = length(l.xz) / tr.R.x, ang = atan(l.z, l.x);
+    float nt = 10.0 + 4.0 * fract(tr.seed * 0.31), ti = floor(yy * nt + rr * 0.6);
+    float tier = fract(yy * nt + rr * 0.6);
+    float reach = 0.7 + 0.45 * valueNoise(vec2(ang * 2.2 + ti * 1.7, ti + tr.seed));
+    vec4 n1 = nz(l / (tr.h * 0.05) * 0.1 + tr.seed * 0.137, rate / (tr.h * 0.05) * 0.1);
+    float Rc = pow(1.0 - yy, 0.95) * mix(1.0, 0.62, tier) * reach * (0.88 + 0.24 * n1.r);
+    // Each whorl splits into separate drooping limbs, with needle clumps along them.
+    float spoke = abs(fract(ang * (1.1 + 0.18 * mod(ti, 3.0)) + ti * 0.37) - 0.5) * 2.0;
+    float limbs = smoothstep(0.95, 0.55, spoke + rr * 0.35 - 0.25);
+    float d = smoothstep(Rc, Rc - 0.06, rr) * smoothstep(0.0, 0.12, tier + 0.08) * smoothstep(0.42, 0.56, n1.g + 0.12);
+    return vec2(d * mix(limbs, 1.0, smoothstep(0.55, 0.2, rr / max(Rc, 1e-3))) * uTreeLook.x, clamp((Rc - rr) * 3.0, 0.0, 1.0));
+  }
+  float shape = crownShape(tr, l);
+  if (shape < -0.35) return vec2(0.0);
+  float cs = tr.h * (tr.type == 2 ? 0.08 : 0.12);
+  vec3 w = l / cs + tr.seed * vec3(0.37, 0.71, 0.13);
+  vec4 n1 = nz(w * 0.1, rate / cs * 0.1);
+  shape += (n1.r - 0.5) * 0.7;
+  if (shape <= 0.0) return vec2(0.0);
+  vec4 n2 = nz(w * 0.33 + 3.1, rate / cs * 0.33);
+  vec4 n3 = nz(w * 1.1 + 7.7, rate / cs * 1.1);
+  // Leaf clusters with sky between them; mostly an outer shell around a sparser core.
+  float sig = n1.g * 0.55 + n2.g * 0.33 + n3.g * 0.14 + shape * 0.5;
+  float leaf = smoothstep(0.5, 0.57, sig);
+  return vec2(leaf * smoothstep(0.0, 0.04, shape) * mix(0.35, 1.0, smoothstep(0.1, 0.4, 1.0 - shape)) * uTreeLook.x, smoothstep(0.52, 0.78, sig));
+}
+
+// Sunlight reaching p through its own crown (no shadows between trees).
+float crownSun(Tree tr, vec3 p) {
+  if (tr.type == 1) {
+    // Horizontal depth to the sunward side of the cone at this height.
+    vec3 l = p - tr.base;
+    float Rc = tr.R.x * pow(clamp(1.0 - (l.y - 0.1 * tr.h) / (0.9 * tr.h), 0.0, 1.0), 0.95);
+    vec2 sh = normalize(uSunDir.xz + 1e-5);
+    float side = dot(l.xz, sh), across = dot(l.xz, vec2(-sh.y, sh.x));
+    float depth = max(sqrt(max(Rc * Rc - across * across, 0.0)) - side, 0.0) / max(length(uSunDir.xz), 0.2);
+    return exp(-3.0 * depth / tr.R.x * uTreeLook.x);
+  }
+  vec2 s = ellipsoidSpan(p, uSunDir, tr.base + tr.c, tr.R);
+  return exp(-2.4 * max(s.y, 0.0) / tr.R.x * uTreeLook.x);
+}
+
+vec3 foliage(Tree tr, vec3 p) {
+  uint h = hash3u(uvec3(ivec3(floor((p - tr.base) / (tr.h * 0.1))) + 4096) + uint(tr.seed * 7.0));
+  vec3 base = tr.type == 1 ? uTreeColor * vec3(0.42, 0.58, 0.62) : tr.type == 2 ? uTreeColor * vec3(1.25, 1.2, 0.7) : uTreeColor;
+  float autumn = uTreeLook.y * (0.4 + 0.6 * fract(tr.seed * 0.73)) * float(tr.type != 1);
+  base = mix(base, mix(vec3(0.55, 0.16, 0.03), vec3(0.62, 0.38, 0.04), rnd(h)), autumn);
+  return base * (0.7 + 0.6 * rnd(h)) * mix(vec3(1.0), vec3(1.1, 1.05, 0.8), rnd(h) * 0.6);
+}
+
+vec4 treeShade(Tree tr, vec3 ro, vec3 rd, float t0, float t1, float tw, vec3 n, float v, float fp, float jitter, vec3 amb) {
+  float tEnd = tw > 0.0 ? min(t1, tw) : t1;
+  vec3 acc = vec3(0.0), L = uSunDir;
+  float T = 1.0;
+  if (t0 < tEnd) {
+    // More steps for crowns that cover many pixels.
+    int N = int(clamp(tr.R.x / (fp * t0 + 1e-4) * 0.35, 18.0, 56.0));
+    float dt = (tEnd - t0) / float(N), t = t0 + dt * jitter;
+    float sigma = 30.0 / tr.R.x;
+    vec3 sunE = uSunScale * transmittance(OBS, L.y);
+    for (int k = 0; k < N; k++) {
+      vec3 p = ro + rd * t;
+      vec2 cd = crownDensity(tr, p, fp * t);
+      float dens = cd.x;
+      if (dens > 0.01) {
+        vec3 q = (p - tr.base - tr.c) / tr.R;
+        vec3 nn = normalize(q / tr.R);
+        // Light reaching this leaf through the crown; backlit crowns glow only at the rim.
+        float sun = crownSun(tr, p);
+        float wrap = max(dot(nn, L) * 0.55 + 0.45, 0.0);
+        float trans = pow(max(dot(rd, L), 0.0), 4.0) * 2.2;
+        float sky = mix(0.25, 1.0, smoothstep(0.2, 1.1, length(q))) * (0.7 + 0.3 * nn.y);
+        // Clump cores stand proud and catch light; their edges sit in each other's shade.
+        float clump = 0.45 + 0.75 * cd.y;
+        vec3 alb = foliage(tr, p);
+        vec3 c = alb * (sunE * sun * (wrap * clump + trans * vec3(1.1, 1.25, 0.6)) / PI + amb * sky * (0.6 + 0.4 * cd.y));
+        if (uMoonScale > 0.0) c += alb * uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0)) * max(dot(nn, uMoonDir) * 0.5 + 0.5, 0.0) / PI;
+        float a = 1.0 - exp(-sigma * dens * dt);
+        acc += T * a * c;
+        T *= 1.0 - a;
+        if (T < 0.02) break;
+      }
+      t += dt;
+    }
+  }
+  if (tw > 0.0 && tw <= t1 + 1e-3 && T > 0.02) {
+    vec3 p = ro + rd * tw;
+    float angle = atan(n.z, n.x);
+    float marks = tr.type == 2 ? smoothstep(0.55, 0.75, valueNoise(vec2(angle * 3.0, v * tr.h * 4.0) + tr.seed)) : 0.0;
+    vec3 bark = tr.type == 2 ? mix(vec3(0.6, 0.58, 0.54), vec3(0.06, 0.05, 0.05), marks) : vec3(0.075, 0.06, 0.05) * (0.8 + 0.4 * valueNoise(vec2(angle * 2.0, v * tr.h * 1.5) + tr.seed));
+    float sun = crownSun(tr, p);
+    vec3 c = bark * (uSunScale * transmittance(OBS, L.y) * max(dot(n, L), 0.0) * sun / PI + amb * mix(0.35, 0.8, sun));
+    acc += T * c;
+    T = 0.0;
+  }
+  return vec4(acc, 1.0 - T);
+}
+
+// Trees along a ray from ro (eye at the origin, ground at y = -eye height), front to back, up
+// to tMax (where the ray meets the ground).
+vec4 treesTrace(vec3 ro, vec3 rd, float tMax, float fp, float jitter, vec3 amb, out float tHit) {
+  vec3 acc = vec3(0.0);
+  float T = 1.0;
+  tHit = 1e9;
+  for (int i = 0; i < MAX_TREES; i++) {
+    if (i >= uTreeN) break;
+    Tree tr = treeAt(i);
+    vec3 bc = tr.base + vec3(0.0, 0.5 * tr.h, 0.0);
+    vec3 oc = ro - bc;
+    float br = 0.58 * tr.h + tr.R.x, b = dot(oc, rd), k = dot(oc, oc) - br * br;
+    if (b * b - k < 0.0 || -b + sqrt(max(b * b - k, 0.0)) < 0.0) continue;
+    vec2 s = ellipsoidSpan(ro, rd, tr.base + tr.c, tr.R * 1.35);
+    vec3 n;
+    float v, tw = treeWood(tr, ro, rd, n, v);
+    if (tw > tMax) tw = -1.0;
+    s.y = min(s.y, tMax);
+    if (s.y < max(s.x, 0.0) && tw < 0.0) continue;
+    float t0 = max(s.x, 0.0), t1 = s.y < t0 ? t0 : s.y;
+    if (tw > 0.0) t1 = max(t1, tw + 1e-3);
+    vec4 c = treeShade(tr, ro, rd, t0, t1, tw, n, v, fp, jitter, amb);
+    if (c.a <= 0.0) continue;
+    float tc = tw > 0.0 ? min(t0, tw) : t0;
+    tHit = min(tHit, tc);
+    // Aerial perspective toward each tree.
+    c.rgb = mix(horizonSky(rd) * c.a, c.rgb, hazeT(tc * 0.001));
+    acc += T * c.rgb;
+    T *= 1.0 - c.a;
+    if (T < 0.01) break;
+  }
+  return vec4(acc, 1.0 - T);
+}
+
+// Sunlight left after passing through tree crowns and trunks on the way to p.
+float treeShadow(vec3 p) {
+  float s = 1.0;
+  for (int i = 0; i < MAX_TREES; i++) {
+    if (i >= uTreeN) break;
+    Tree tr = treeAt(i);
+    vec2 sp = ellipsoidSpan(p, uSunDir, tr.base + tr.c, tr.R);
+    if (sp.y > max(sp.x, 0.0)) s *= mix(1.0, exp(-2.6 * (sp.y - max(sp.x, 0.0)) / tr.R.x), 0.9 * min(uTreeLook.x, 1.0));
+    float rt = tr.h * (tr.type == 1 ? 0.016 : tr.type == 2 ? 0.014 : 0.024);
+    if (capsule(p, uSunDir, tr.base, tr.base + vec3(0.0, tr.type == 1 ? 0.7 * tr.h : tr.c.y, 0.0), rt) > 0.0) s *= 0.15;
+  }
+  return s;
 }
 
 // ── Ground surfaces ──
@@ -1937,10 +2265,15 @@ const SCENE_UNIFORMS = [
   ['uGrass', 'vec4', () => [P.grassHeight, P.grassDensity, P.grassWidth * 0.006, P.grassLean]],
   ['uGrassB', 'vec4', () => [P.grassDry, P.flowers, window.DBG_T ?? 1, 0]],
   ['uFlower', 'vec3', () => hexLinear(P.flowerColor)],
+  ['uTree', 'vec4', () => D.trees, 16],
+  ['uTreeN', 'int', () => D.treeN],
+  ['uTreeLook', 'vec4', () => [P.treeFoliage, P.treeAutumn, P.treeWidth, 0]],
+  ['uTreeColor', 'vec3', () => hexLinear(P.treeColor)],
   ['uWave', 'vec4', () => D.waves, 32],
   ['uWaveFx', 'vec3', () => D.waveFx],
   ['uLand', 'vec4', () => [P.land, P.landHeight, P.landRough, P.landLayers]],
   ['uLandB', 'vec4', () => [P.landDepth, P.landHeading * DEG, P.landSeed, P.cityLights]],
+  ['uLandC', 'vec4', () => [P.landSnow, 0, P.forestMix, P.forestDensity]],
   ['uLandColor', 'vec3', () => hexLinear(P.landColor)],
   ['uCityColor', 'vec3', () => hexLinear(P.cityColor)],
   ['uPeak', 'vec4', () => [P.peak, P.peakHeading * DEG, P.peakWidth * DEG, P.peakSnow]],
@@ -2101,14 +2434,20 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
 vec3 viewRadiance(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   vec3 landCol = vec3(0.0);
   float landT = 1.0;
-  if (uLand.x > 0.5 && d.y < 0.4) {
+  if (uLand.x > 0.5 && d.y < 0.4 && !gNoLand) {
     float az = atan(d.x, d.z), el = asin(clamp(d.y, -1.0, 1.0));
     for (int L = 0; L < 4; L++) {
       if (L >= int(uLand.w) || el < -uSurf.y / (LAND_DIST[L] * uLandB.x * 1000.0)) break;
       Ridge rg = ridgeAt(L, az, fp);
-      float cov = smoothstep(-fp, fp, rg.h - el);
+      float cov = smoothstep(-fp, fp, rg.h - el), tree = 0.0, tone = 1.0;
+      vec3 tn = vec3(0.0, 0.3, 0.95);
+      if (uLand.x > 2.5 && uLand.x < 3.5) {
+        tree = forestCover(L, az, el, rg.hb, fp, tn, tone);
+        if (rg.top > 0.5 && cov > tree) tree = 0.0;
+        cov = max(cov, tree);
+      }
       if (cov > 0.0) {
-        landCol += landT * cov * shadeLand(L, d, az, el, rg, amb, fp);
+        landCol += landT * cov * shadeLand(L, d, az, el, rg, amb, fp, tree, tn, tone);
         landT *= 1.0 - cov;
         if (landT < 0.004) break;
       }
@@ -2118,35 +2457,88 @@ vec3 viewRadiance(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   return landCol + landT * skyAbove(d, fp, fpOut, jitter, amb);
 }
 
+// Everything a view ray meets, front to back: trees, grass blades, then the ground (water,
+// grass canopy or plain ground) or the sky and landscape. Water continues as a second pass along
+// the reflected ray. Each heavy routine has exactly one call site, since GLSL inlines them all.
 vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
   vec3 amb = skyAmbient();
-  float Dm = d.y < 0.0 ? uSurf.y / -d.y : 1e9;
-  bool ground = d.y < 0.0 && (uLand.x < 0.5 || Dm < LAND_DIST[0] * uLandB.x * 1000.0);
   int type = int(uSurf.x);
-  if (!ground) {
-    vec3 sky = viewRadiance(d, fp, fpOut, jitter, amb);
-    if ((type == 3 || type == 4) && uSurf.y < 1.3 * uGrass.x) {
-      // Eye inside the canopy: blades stand against the sky.
-      grassSetup();
-      float tTop = d.y > 1e-4 ? (1.3 * uGrass.x - uSurf.y) / d.y : 1e4;
-      float tRes = min(uGrass.z * 10.0, 0.8 * gCell.y) / (0.75 * fp), tEnd;
-      vec4 g = grassTrace(d, 0.0, min(tTop, tRes), tRes, fp, amb, tEnd);
-      vec3 rest = tTop <= tEnd + 1e-3 ? sky : grassCanopy(normalize(vec3(d.x, -0.03, d.z)), d.xz * tEnd, fp * tEnd * 6.0, amb);
-      return g.rgb + (1.0 - g.a) * rest;
-    }
-    return sky;
-  }
+  bool grassy = type == 3 || type == 4, water = type == 1 || type == 2;
+  float E = uSurf.y, H = uGrass.x;
+  float Dm = d.y < 0.0 ? E / -d.y : 1e9;
+  bool ground = d.y < 0.0 && (uLand.x < 0.5 || Dm < LAND_DIST[0] * uLandB.x * 1000.0);
   float rate = fp * Dm * inversesqrt(max(-d.y, 0.02));
-  vec3 col;
-  if (type == 1 || type == 2) col = shadeWater(d, Dm, rate, fp, fpOut, jitter, amb);
-  else if (type == 3 || type == 4) col = shadeGrass(d, Dm, fp, jitter, amb);
-  else {
-    vec3 n;
-    vec4 s = surfaceAt(d.xz * Dm, rate, d, Dm, n);
-    col = s.rgb * (directLight(n) + amb);
+  if (grassy) grassSetup();
+  float tTop = d.y < 0.0 && E > 1.3 * H ? (E - 1.3 * H) / -d.y : 0.0;
+  if (uTreeN > 0 && ground) {
+    float tm = grassy ? mix(tTop, Dm, 0.5) : Dm;
+    gShade = treeShadow(vec3(d.x * tm, -E, d.z * tm));
   }
-  col = mix(horizonSky(d), col, hazeT(Dm * 0.001));
-  return applyFog(col, d, Dm, amb);
+  vec3 acc = vec3(0.0), ro = vec3(0.0), rd = d;
+  float T = 1.0;
+  for (int pass = 0; pass < 2; pass++) {
+    bool hit = pass == 0 && ground;
+    float tTree = 1e9;
+    vec4 tree = uTreeN > 0 ? treesTrace(ro, rd, hit ? Dm : 1e9, fp, jitter, amb, tTree) : vec4(0.0);
+    // Grass blades in front of everything else, including from inside the canopy.
+    bool inGrass = pass == 0 && grassy && (ground || E < 1.3 * H);
+    float tEnd = tTop, t1 = 0.0, tRes = 0.0;
+    if (inGrass) {
+      t1 = ground ? Dm : (d.y > 1e-4 ? (1.3 * H - E) / d.y : 1e4);
+      tRes = min(uGrass.z * 10.0, 0.8 * gCell.y) / (0.75 * fp) * (0.75 + 0.5 * jitter) * uGrassB.z;
+      if (tTop < min(tRes, tTree)) {
+        vec4 g = grassTrace(d, tTop, min(min(t1, tRes), tTree), tRes, fp, amb, tEnd);
+        acc += g.rgb;
+        T = 1.0 - g.a;
+      }
+    }
+    acc += T * tree.rgb;
+    T *= 1.0 - tree.a;
+    if (T < 0.004) break;
+    if (hit) {
+      // Ground fog, then aerial perspective, between the eye and the ground.
+      if (uFog.x > 0.0) {
+        float f = 1.0 - exp(-fogDepth(d, Dm));
+        acc += T * f * fogLight(d, amb) * (1.0 + uFog.z * 2.0 * exp(-abs(d.y) * 40.0));
+        T *= 1.0 - f;
+      }
+      float hz = hazeT(Dm * 0.001);
+      acc += T * (1.0 - hz) * horizonSky(d);
+      T *= hz;
+    }
+    bool wall = inGrass && !ground && tEnd < t1 - 1e-3;
+    if ((hit && grassy) || wall) {
+      float tc = clamp(tEnd, 0.7 * tRes, hit ? Dm : 1e4);
+      vec3 dd = wall ? normalize(vec3(d.x, -0.03, d.z)) : d;
+      acc += T * (hit && tEnd >= Dm - 1e-3 ? grassGround(d.xz * Dm, rate, amb)
+                                           : grassCanopy(dd, d.xz * tc, fp * tc * inversesqrt(max(-dd.y, 0.02)), amb));
+      break;
+    }
+    if (hit && water) {
+      float F;
+      vec3 r;
+      bool under;
+      acc += T * waterSurface(d, Dm, rate, fp, amb, F, r, under);
+      T *= F;
+      if (T < 0.004) break;
+      ro = vec3(d.x * Dm, -E, d.z * Dm);
+      rd = r;
+      gNoLand = under;
+      gMirror = true;
+      continue;
+    }
+    if (hit) {
+      vec3 n;
+      vec4 s = surfaceAt(d.xz * Dm, rate, d, Dm, n);
+      acc += T * s.rgb * (directLight(n) * gShade + amb);
+      break;
+    }
+    acc += T * viewRadiance(rd, fp, fpOut, jitter, amb);
+    break;
+  }
+  gMirror = false;
+  gNoLand = false;
+  return acc;
 }
 
 // ── Tone & Grade ──
@@ -2488,9 +2880,32 @@ function waveField() {
   return { waves: out, fx: [clamp(P.surfWaves / 2.5, 0, 0.8), P.surface === 1 ? P.surfFoam * clamp((P.surfWaves - 0.8) / 1.4, 0, 1) : 0, 0.15 * mss] };
 }
 
+// Foreground trees: scattered around a heading at random distances, kept apart, sorted front to
+// back. Each entry is (x, z, height, type * 1000 + seed).
+function treeField() {
+  const R = rng(P.treeSeed * 7919 + 13), out = [], spots = [];
+  for (let i = 0, tries = 0; i < P.trees && tries < 200; tries++) {
+    const one = P.trees === 1;
+    const az = (P.treeHeading + (one ? 0 : (R() - 0.5) * P.treeSpread)) * DEG;
+    const dist = one ? P.treeNear : P.treeNear + (P.treeFar - P.treeNear) * Math.pow(R(), 0.8);
+    const h = P.treeHeight * (one ? 1 : 0.7 + 0.6 * R());
+    const x = Math.sin(az) * dist, z = Math.cos(az) * dist;
+    if (spots.some(([sx, sz, sh]) => Math.hypot(x - sx, z - sz) < 0.35 * (h + sh))) continue;
+    const type = P.treeType < 3 ? P.treeType : [0, 0, 1, 2][Math.floor(R() * 4)];
+    spots.push([x, z, h]);
+    out.push([dist, x, z, h, type * 1000 + Math.floor(R() * 997)]);
+    i++;
+  }
+  out.sort((a, b) => a[0] - b[0]);
+  const flat = new Array(64).fill(0);
+  out.forEach(([, x, z, h, w], i) => flat.splice(i * 4, 4, x, z, h, w));
+  return { trees: flat, n: out.length };
+}
+
 function derive(img) {
   D.img = img || captureDims();
   ({ waves: D.waves, fx: D.waveFx } = waveField());
+  ({ trees: D.trees, n: D.treeN } = treeField());
   D.basis = cameraBasis();
   D.sunDir = skyVector(P.sunElev, P.sunHeading);
   D.sunAz = [Math.sin(P.sunHeading * DEG), Math.cos(P.sunHeading * DEG)];
@@ -3187,7 +3602,25 @@ const TABS = [
       { key: 'landHeading', label: 'Rotate', min: 0, max: 360, step: 0.5, fmt: deg, when: () => P.land > 0 },
       { key: 'landSeed', label: 'Shape', min: 0, max: 50, step: 0.1, fmt: fmt(1), when: () => P.land > 0 },
       { key: 'landColor', label: 'Color', type: 'color', when: () => P.land > 0 },
+      { key: 'landSnow', label: 'Snow', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.land === 1 || P.land === 2 },
+      { key: 'forestMix', label: 'Conifers', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.land === 3 },
+      { key: 'forestDensity', label: 'Tree Density', min: 0.2, max: 1, step: 0.01, fmt: pct, when: () => P.land === 3 },
       { key: 'cityLights', label: 'Window Lights', color: 'cityColor', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.land === 4 },
+    ]],
+    ['Trees', [
+      { key: 'trees', label: 'Count', min: 0, max: 16, step: 1, fmt: v => v ? fmt(0)(v) : 'Off' },
+      { key: 'treeType', label: 'Kind', type: 'choice', cols: 4, options: ['Broadleaf', 'Conifer', 'Birch', 'Mixed'].map((title, value) => ({ value, title })), when: () => P.trees > 0 },
+      { key: 'treeHeight', label: 'Height', min: 3, max: 40, step: 0.5, fmt: v => v.toFixed(1) + ' m', when: () => P.trees > 0 },
+      { key: 'treeWidth', label: 'Crown Width', min: 0.5, max: 1.8, step: 0.01, fmt: v => v.toFixed(2) + '×', when: () => P.trees > 0 },
+      { key: 'treeFoliage', label: 'Foliage', color: 'treeColor', min: 0.2, max: 1.5, step: 0.01, fmt: fmt(2), when: () => P.trees > 0 },
+      { key: 'treeAutumn', label: 'Autumn', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.trees > 0 },
+      { key: 'treeNear', label: 'Nearest', min: 5, max: 400, step: 1, fmt: v => v.toFixed(0) + ' m', when: () => P.trees > 0,
+        after: () => { P.treeFar = Math.max(P.treeFar, P.treeNear); } },
+      { key: 'treeFar', label: 'Farthest', min: 10, max: 1000, step: 1, fmt: v => v.toFixed(0) + ' m', when: () => P.trees > 1,
+        after: () => { P.treeNear = Math.min(P.treeNear, P.treeFar); } },
+      { key: 'treeHeading', label: 'Heading', min: 0, max: 360, step: 0.5, fmt: deg, when: () => P.trees > 0 },
+      { key: 'treeSpread', label: 'Spread', min: 0, max: 360, step: 1, fmt: deg, when: () => P.trees > 1 },
+      { key: 'treeSeed', label: 'Layout', min: 1, max: 99, step: 1, fmt: fmt(0), when: () => P.trees > 0 },
     ]],
     ['Volcano Peak', [
       { key: 'peak', label: 'Height', min: 0, max: 20, step: 0.05, fmt: v => v ? deg(v) : 'Off' },
@@ -3352,6 +3785,7 @@ function syncUI() {
   frameEl.classList.toggle('on', C.on);
   frameEl.classList.toggle('grid', C.on && C.grid);
   bar.classList.toggle('capture', C.on);
+  $('credit').classList.toggle('away', C.on || !!job);
   if (!C.on || !C.loupe) loupeEl.classList.remove('on');
 }
 
