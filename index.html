@@ -44,22 +44,29 @@ button { font: inherit; color: inherit; }
 }
 #loupe.on { display: block; }
 
+/* Frosted glass behind the panel, the bar and the toast. */
+#panel, #bar, #toast {
+  background: var(--panel); border: 1px solid var(--faint);
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+}
 #panel {
   position: fixed; top: 12px; right: 12px; bottom: 12px; width: 300px; display: flex; flex-direction: column;
-  background: var(--panel); border: 1px solid var(--faint); border-radius: 14px;
-  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); transition: opacity .2s, transform .2s;
+  border-radius: 14px; transition: opacity .2s, transform .2s;
 }
 #panel.hidden { opacity: 0; transform: translateX(12px); pointer-events: none; }
+/* Scrolling strips (and the panel itself on phones) hide their scrollbars. */
+#panel, .presets, .tabbody { scrollbar-width: none; }
+#panel::-webkit-scrollbar, .presets::-webkit-scrollbar, .tabbody::-webkit-scrollbar { display: none; }
 .head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px 8px 14px; }
 .title { letter-spacing: .26em; text-transform: uppercase; font-size: 10px; }
 .head-r { display: flex; align-items: center; gap: 4px; }
 .stat { color: var(--dim); font: 10px var(--mono); margin-right: 6px; font-variant-numeric: tabular-nums; }
-.icon { background: none; border: 0; color: var(--dim); cursor: pointer; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; }
+/* Bare buttons: no chrome, dim until hovered or active. */
+.icon, .preset, .tab, .sh { background: none; border: 0; color: var(--dim); cursor: pointer; }
+.icon { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; }
 .icon:hover { color: var(--ink); background: var(--line); }
-.icon:disabled { opacity: .3; pointer-events: none; }
-.presets { display: flex; gap: 8px; overflow-x: auto; padding: 2px 14px 12px; scrollbar-width: none; flex: none; }
-.presets::-webkit-scrollbar { display: none; }
-.preset { flex: none; width: 70px; background: none; border: 0; color: var(--dim); cursor: pointer; text-align: left; font-size: 10px; position: relative; }
+.presets { display: flex; gap: 8px; overflow-x: auto; padding: 2px 14px 12px; flex: none; }
+.preset { flex: none; width: 70px; text-align: left; font-size: 10px; position: relative; }
 .preset canvas { width: 70px; height: 44px; border-radius: 7px; border: 1px solid var(--faint); display: block; margin-bottom: 4px; background: #000; }
 .preset:hover canvas { border-color: var(--dim); }
 .preset.active { color: var(--ink); }
@@ -74,27 +81,26 @@ button { font: inherit; color: inherit; }
 .saverow .btn { flex: none; padding: 6px 12px; }
 .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 6px 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; }
 .tab {
-  background: none; border: 0; border-radius: 7px; color: var(--dim); cursor: pointer;
-  padding: 6px 0 5px; display: grid; justify-items: center; gap: 3px; font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
+  border-radius: 7px; padding: 6px 0 5px; display: grid; justify-items: center; gap: 3px;
+  font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
 }
 .tab:hover { color: var(--ink); }
 .tab.active { color: var(--ink); background: var(--line); }
-.tabbody { flex: 1; overflow-y: auto; padding: 0 14px 12px; scrollbar-width: none; min-height: 0; }
-.tabbody::-webkit-scrollbar { display: none; }
+.tabbody { flex: 1; overflow-y: auto; padding: 0 14px 12px; min-height: 0; }
 .foot { display: flex; gap: 6px; padding: 10px 14px 12px; border-top: 1px solid var(--line); flex: none; }
 .btn {
   flex: 1; background: none; border: 1px solid var(--faint); color: var(--ink); border-radius: 8px;
   padding: 7px 0; letter-spacing: .06em; cursor: pointer; white-space: nowrap;
 }
 .btn:hover { border-color: var(--dim); }
-.btn:disabled { opacity: .32; pointer-events: none; }
+.btn:disabled, .icon:disabled { opacity: .32; pointer-events: none; }
 .btn.active, .btn.primary { background: var(--ink); color: #000; border-color: var(--ink); }
 .btn.primary:hover { background: #fff; }
 .sec { border-top: 1px solid var(--line); }
 .sec:first-child { border-top: 0; }
 .sh {
-  width: 100%; display: flex; justify-content: space-between; background: none; border: 0; color: var(--dim);
-  font-size: 9.5px; letter-spacing: .2em; text-transform: uppercase; padding: 12px 0 8px; cursor: pointer;
+  width: 100%; display: flex; justify-content: space-between;
+  font-size: 9.5px; letter-spacing: .2em; text-transform: uppercase; padding: 12px 0 8px;
 }
 .sh::after { content: "–"; }
 .sec.closed .sh::after { content: "+"; }
@@ -103,7 +109,7 @@ button { font: inherit; color: inherit; }
 .row { padding: 4px 0; transition: opacity .15s; }
 .row.off, .tog.off { opacity: .32; }
 .lab { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 2px; min-height: 16px; }
-.lab > span:first-child { cursor: default; user-select: none; }
+.lab > span:first-child { cursor: default; -webkit-user-select: none; user-select: none; }
 .lab-r { display: flex; align-items: center; gap: 8px; }
 .val { color: var(--dim); font: 10px var(--mono); font-variant-numeric: tabular-nums; }
 input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 16px; background: transparent; cursor: pointer; display: block; }
@@ -115,7 +121,7 @@ input[type=color] { -webkit-appearance: none; appearance: none; width: 15px; hei
 input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
 input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; }
 input[type=color]::-moz-color-swatch { border: 0; border-radius: 50%; }
-.tog { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; cursor: pointer; user-select: none; transition: opacity .15s; }
+.tog { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; cursor: pointer; -webkit-user-select: none; user-select: none; transition: opacity .15s; }
 .sw { width: 26px; height: 14px; border-radius: 7px; border: 1px solid var(--dim); position: relative; transition: .15s; flex: none; }
 .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); transition: .15s; }
 .tog.on .sw { background: var(--ink); border-color: var(--ink); }
@@ -131,10 +137,10 @@ select, .num {
 }
 select:focus, .num:focus { border-color: var(--dim); }
 select option { background: #111; }
-.dims { display: flex; align-items: center; gap: 6px; }
-.dims span { color: var(--dim); }
 .num { font-family: var(--mono); text-align: center; -moz-appearance: textfield; }
 .num::-webkit-inner-spin-button { -webkit-appearance: none; }
+.dims { display: flex; align-items: center; gap: 6px; }
+.dims span { color: var(--dim); }
 .note { color: var(--dim); padding: 4px 0; }
 :focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
 
@@ -146,20 +152,19 @@ select option { background: #111; }
 
 #bar {
   position: fixed; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
-  padding: 5px; background: var(--panel); border: 1px solid var(--faint); border-radius: 999px;
-  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); white-space: nowrap; z-index: 2;
+  padding: 5px; border-radius: 999px; white-space: nowrap; z-index: 2;
 }
 #bar .capgroup { display: none; align-items: center; gap: 6px; margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--faint); }
 #bar.capture .capgroup { display: flex; }
 #bar.compact > :not(.capgroup) { display: none; }
 #bar.compact .capgroup { margin-left: 0; padding-left: 4px; border-left: 0; }
 #bar.tight .capgroup > .info { display: none; }
+#bar .btn { flex: none; padding: 7px 14px; border-radius: 999px; }
 #bar .btn.ghost { border-color: transparent; color: var(--dim); padding: 7px 8px; min-width: 64px; }
 #bar .btn.ghost:hover { color: var(--ink); }
-#bar .clock { min-width: 58px; text-align: center; margin: 0; }
+#bar .clock { min-width: 58px; text-align: center; }
 #bar .info { font: 10.5px var(--mono); color: var(--dim); margin-right: 4px; font-variant-numeric: tabular-nums; }
 #bar .info b { color: var(--ink); font-weight: 400; }
-#bar .btn { flex: none; padding: 7px 14px; border-radius: 999px; }
 #bar .icon { width: 30px; height: 30px; border-radius: 50%; }
 #bar .icon.on { color: #000; background: var(--ink); }
 
@@ -186,19 +191,17 @@ select option { background: #111; }
 #credit a:hover { opacity: 1; }
 #toast {
   position: fixed; left: 50%; top: 18px; transform: translate(-50%, -8px); opacity: 0; pointer-events: none;
-  background: var(--panel); border: 1px solid var(--faint); border-radius: 999px; padding: 7px 14px; transition: .2s; z-index: 20;
-  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  border-radius: 999px; padding: 7px 14px; transition: .2s; z-index: 20;
 }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
 #err { position: fixed; inset: 0; padding: 24px; white-space: pre-wrap; font: 11px/1.5 var(--mono); color: var(--ink); background: var(--void); display: none; z-index: 30; }
 
 @media (max-width: 700px) {
-  /* Phones: the whole sheet scrolls as one; Reseed and Capture stay pinned to its bottom edge. */
-  #panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; height: 48%; display: block; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
-  #panel::-webkit-scrollbar { display: none; }
+  /* Phones: the whole sheet scrolls as one; Reset and Capture stay pinned to its bottom edge. */
+  #panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; height: 48%; display: block; overflow-y: auto; overscroll-behavior: contain; }
   .tabbody { overflow: visible; }
   .foot { position: sticky; bottom: 0; background: rgba(9, 10, 15, .97); }
-  #credit { top: 60px; left: 50%; right: auto; bottom: auto; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; font-size: 8px; letter-spacing: .01em; white-space: nowrap; }
+  #credit { top: 60px; left: 50%; bottom: auto; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; font-size: 8px; letter-spacing: .01em; white-space: nowrap; }
   #credit svg { width: 9px; height: 9px; }
   #credit .gh { display: none; }
   #bar { bottom: auto; top: 10px; }
@@ -604,7 +607,8 @@ const PRESETS = [
 
 // Looks saved before v2 stored only values that differed from the defaults of the time.
 const LEGACY = { surface: 0, surfColorA: '#1b1c21', surfColorB: '#121317', surfReflect: 0, surfWaves: 0.5 };
-const looks = (store('horizon-looks') || []).filter(l => l && l.name && l.p)
+const savedLooks = store('horizon-looks');
+const looks = (Array.isArray(savedLooks) ? savedLooks : []).filter(l => l && l.name && l.p)
   .map(l => l.v ? l : { name: l.name, v: 2, p: { ...LEGACY, ...l.p } });
 
 function lookParams(look) {
@@ -619,7 +623,7 @@ function applyLook(look) {
   setPlaying(false);
   Object.assign(P, lookParams(look));
   Object.assign(ANIM, { time: 0, micro: 0, elapsed: 0, origin: null, cloud: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] });
-  cloudSel = Math.max(0, [0, 1, 2].find(i => P[`c${i}On`]) ?? 0);
+  cloudSel = [0, 1, 2].find(i => P[`c${i}On`]) ?? 0;
   changed();
 }
 
@@ -643,17 +647,9 @@ function renderThumb(look, cv) {
   Object.assign(P, lookParams(look));
   ANIM.cloud = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
   const w = cv.width, h = cv.height;
-  if (!thumbTarget || thumbTarget.w !== w || thumbTarget.h !== h) {
-    if (thumbTarget) thumbTarget.free();
-    thumbTarget = target(w, h);
-  }
+  thumbTarget = fitTarget(thumbTarget, w, h);
   drawSky(thumbTarget.fbo, w, h, [0, 0], 1, sceneValues([w, h]), { quality: 0.8 });
-  const px = new Uint8ClampedArray(w * h * 4);
-  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  const img = new ImageData(w, h);
-  for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
-  cv.getContext('2d').putImageData(img, 0, 0);
+  readInto(cv.getContext('2d'), w, h);
   Object.assign(P, JSON.parse(savedP));
   ANIM.cloud = savedCloud;
 }
@@ -731,7 +727,7 @@ const canvas = $('view');
 const frameEl = $('frame');
 const panel = $('panel');
 const bar = $('bar');
-const F = { x: 0, y: 0, w: 1, h: 1, cx: 0, cy: 0 };
+const F = { x: 0, y: 0, w: 1, h: 1, cx: 0 };
 const BAR_SPACE = 80;
 
 function layout() {
@@ -794,6 +790,10 @@ float hash12(vec2 p) {
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
 float wrapAngle(float a) { return mod(a + PI, TAU) - PI; }
+
+float gauss(float x) { return exp(-0.5 * x * x); }
+
+vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
 
 float valueNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -1002,7 +1002,7 @@ void main() {
 }`;
 
 const GLSL_NIGHT = `
-vec4 nz(vec3 q, float rate) { return textureLod(uNoise3, q, max(0.0, log2(rate * ${NOISE_N}.0))); }
+vec4 nz(vec3 q, float rate) { return textureLod(uNoise3, q, log2(max(rate * ${NOISE_N}.0, 1.0))); }
 
 vec3 blackbody(float t) {
   t *= 0.01;
@@ -1215,6 +1215,10 @@ vec4 nebula(vec3 p, float fp) {
   return vec4(c * (1.0 - veil) * uNeb.x * 0.25, veil * min(uNeb.x, 1.0));
 }
 
+// Extinction toward elevation sine mu relative to the zenith, by the Extinction setting: it dims
+// stars, planets and the moon (and the moon's glitter on water) low in the sky.
+vec3 skyExtinction(float mu) { return mix(vec3(1.0), transmittance(OBS, max(mu, 0.0)) / transmittance(OBS, 1.0), uStarLook.w); }
+
 vec4 moonDisk(vec3 d, float fp) {
   vec3 dv = d - uMoonDir;
   float ang = 2.0 * asin(clamp(length(dv) * 0.5, 0.0, 1.0));
@@ -1244,12 +1248,22 @@ vec4 moonDisk(vec3 d, float fp) {
 
 const int MAX_BODIES = 2;
 
+// Where d lies on the sky around the direction c (cosA = dot(d, c)): azimuthal equidistant
+// coordinates in units of the angular radius R, x to the right and y up.
+vec2 skyPlane(vec3 d, vec3 c, float cosA, float R) {
+  vec3 right = abs(c.y) > 0.999 ? vec3(1.0, 0.0, 0.0) : normalize(cross(vec3(0.0, 1.0, 0.0), c)), up = cross(c, right);
+  vec3 tv = d - c * cosA;
+  float tl = length(tv), ang = acos(clamp(cosA, -1.0, 1.0));
+  return tl > 1e-8 ? vec2(dot(tv, right), dot(tv, up)) / tl * (ang / R) : vec2(0.0);
+}
+
 // Ring opacity across the ring (u: 0 inner edge, 1 outer edge); fu is the footprint in u.
 float ringDensity(float u, float seed, float fu) {
   float d = smoothstep(0.0, 0.03, u) * smoothstep(1.0, 0.95, u);
   float fine = mix(0.5 + 0.5 * sin(u * 260.0 + seed * 3.0), 0.5, smoothstep(0.002, 0.008, fu));
   float mid = mix(0.5 + 0.5 * sin(u * 47.0 + seed * 1.3), 0.5, smoothstep(0.015, 0.05, fu));
-  float gap = 1.0 - 0.94 * exp(-pow((u - 0.64) / 0.022, 2.0)) * (1.0 - smoothstep(0.02, 0.06, fu));
+  float gu = (u - 0.64) / 0.022;
+  float gap = 1.0 - 0.94 * exp(-gu * gu) * (1.0 - smoothstep(0.02, 0.06, fu));
   return d * gap * mix(0.3, 1.0, smoothstep(0.05, 0.4, u)) * (0.5 + 0.3 * mid + 0.2 * fine);
 }
 
@@ -1314,14 +1328,12 @@ vec4 bodies(vec3 d, float fp) {
     vec3 c = A.xyz;
     float R = A.w, cosA = dot(d, c), reach = R * max(Dd.w, 1.0) * 1.12;
     if (cosA < cos(min(reach, 3.0))) continue;
-    vec3 right = abs(c.y) > 0.999 ? vec3(1.0, 0.0, 0.0) : normalize(cross(vec3(0.0, 1.0, 0.0), c)), up = cross(c, right);
-    vec3 tv = d - c * cosA;
-    float tl = length(tv), ang = acos(clamp(cosA, -1.0, 1.0));
-    vec2 xy = tl > 1e-8 ? vec2(dot(tv, right), dot(tv, up)) / tl * (ang / R) : vec2(0.0);
+    vec2 xy = skyPlane(d, c, cosA, R);
     float r = length(xy), fr = fp / R;
     int type = int(B.x);
     vec3 ax = vec3(sin(Dd.x) * cos(Dd.y), cos(Dd.x) * cos(Dd.y), sin(Dd.y)), L = C.xyz;
     vec3 c1 = uBodyCol1[i], c2 = uBodyCol2[i];
+    vec3 atmo = mix(c1, vec3(0.55, 0.75, 1.0), type == 4 ? 0.8 : 0.3) * B.w;
     // Disk.
     float pa = clamp((1.0 - r) / fr + 0.5, 0.0, 1.0), z = sqrt(max(1.0 - r * r, 0.0));
     vec3 pc = vec3(0.0);
@@ -1339,15 +1351,15 @@ vec4 bodies(vec3 d, float fp) {
           if (u > 0.0 && u < 1.0) lit *= 1.0 - 0.85 * B.z * ringDensity(u, C.w, fr);
         }
       }
-      vec3 rim = mix(c1, vec3(0.55, 0.75, 1.0), type == 4 ? 0.8 : 0.3) * B.w * pow(1.0 - z, 3.0) * smoothstep(-0.2, 0.4, mu0);
-      pc = (alb * (lit + 0.012) + rim + emit) * B.y;
+      vec3 rim = atmo * pow(1.0 - z, 3.0) * smoothstep(-0.2, 0.4, mu0);
+      pc = (alb * (lit + 0.012) + rim + emit) * B.y * pa;
     }
     // Atmosphere halo just outside the limb, on the lit side.
     vec3 halo = vec3(0.0);
     if (B.w > 0.0 && r > 0.9) {
       vec2 rd = xy / max(r, 1e-4);
       float side = smoothstep(-0.3, 0.6, dot(rd, L.xy) + L.z * 0.3);
-      halo = mix(c1, vec3(0.55, 0.75, 1.0), type == 4 ? 0.8 : 0.3) * B.w * 0.6 * exp(-max(r - 1.0, 0.0) / 0.035) * side * B.y;
+      halo = atmo * 0.6 * exp(-max(r - 1.0, 0.0) / 0.035) * side * B.y;
     }
     // Rings: where the view ray crosses the ring plane, in front of or behind the disk.
     vec3 rc = vec3(0.0);
@@ -1388,12 +1400,7 @@ vec3 galaxy(vec3 d, float fp) {
   vec3 c = uGalDir;
   float R = uGal.y, cosA = dot(d, c);
   if (cosA < cos(min(R * 1.6, 3.0))) return vec3(0.0);
-  vec3 right = abs(c.y) > 0.999 ? vec3(1.0, 0.0, 0.0) : normalize(cross(vec3(0.0, 1.0, 0.0), c)), up = cross(c, right);
-  vec3 tv = d - c * cosA;
-  float tl = length(tv), ang = acos(clamp(cosA, -1.0, 1.0));
-  vec2 xy = tl > 1e-8 ? vec2(dot(tv, right), dot(tv, up)) / tl * (ang / R) : vec2(0.0);
-  float pa = uGal.w;
-  xy = mat2(cos(pa), sin(pa), -sin(pa), cos(pa)) * xy;
+  vec2 xy = rot2(skyPlane(d, c, cosA, R), uGal.w);
   float ci = max(cos(uGal.z), 0.06);
   vec2 g = vec2(xy.x, xy.y / ci);
   float r = length(g), th = atan(g.y, g.x), fr = fp / R / ci;
@@ -1407,7 +1414,7 @@ vec3 galaxy(vec3 d, float fp) {
   float bulge = exp(-r * r / 0.01) * 1.6 + exp(-r / 0.09) * 0.45;
   float knots = smoothstep(0.62, 0.9, nz(vec3(g * 7.0, 0.31) + o, fr * 7.0).g) * arm;
   // Edge-on galaxies show a dark band through the middle of the disk.
-  float band = exp(-pow(xy.y / max(0.03 * (1.0 - ci) + 0.01, 1e-3), 2.0) * 0.5) * smoothstep(0.35, 0.95, 1.0 - ci) * smoothstep(1.2, 0.3, r);
+  float band = gauss(xy.y / (0.03 * (1.0 - ci) + 0.01)) * smoothstep(0.35, 0.95, 1.0 - ci) * smoothstep(1.2, 0.3, r);
   vec3 col = uGalCore * bulge + uGalArm * disk * (0.3 + 1.1 * arm) * (1.0 - 0.75 * lane) + vec3(1.0, 0.45, 0.6) * knots * disk * 2.2;
   col *= 1.0 - 0.8 * band;
   return col * uGal.x * 0.2;
@@ -1464,8 +1471,6 @@ float hg(float c, float g) {
   float g2 = g * g;
   return 0.0795775 * (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5);
 }
-
-vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
 
 // A layer's field in cell units: x is the puff field before thresholding, y the local coverage.
 // Weather (two very large octaves) makes coverage and cell size wander across the sky, and every
@@ -1544,7 +1549,8 @@ vec4 cloudLayer(int i, vec3 d, float fp, float jitter) {
   float phase = mix(0.0796, 0.75 * hg(c, 0.82) + 0.25 * hg(c, -0.25), uCloudLight.x);
   float sigma = uCloudA[i].y * 32.0;
   float Lup = dot(L, up);
-  int n = int(clamp((tEnd - t0) / (th * 0.07) * uQuality, 8.0, 48.0 * uQuality));
+  // At most the 64 steps the loop below allows, or the march would stop short of tEnd.
+  int n = int(clamp((tEnd - t0) / (th * 0.07) * uQuality, 8.0, min(48.0 * uQuality, 64.0)));
   float graze = inversesqrt(max(abs(dot(d, up)), 0.04));
   float dt = (tEnd - t0) / float(n);
   float t = t0 + dt * jitter;
@@ -1620,16 +1626,15 @@ float fogDepth(vec3 d, float dist) {
   return rho * H * (1.0 - exp(-d.y * dist / H)) / d.y;
 }
 
+// Light the fog scatters toward the eye; Fog Glow brightens it along the horizon.
 vec3 fogLight(vec3 d, vec3 amb) {
   vec3 sun = uSunScale * transmittance(OBS, uSunDir.y) * hg(dot(d, uSunDir), 0.65) * 3.0;
-  return uFogColor * (amb + sun);
+  return uFogColor * (amb + sun) * (1.0 + uFog.z * 2.0 * exp(-abs(d.y) * 40.0));
 }
 
 vec3 applyFog(vec3 c, vec3 d, float dist, vec3 amb) {
   if (uFog.x <= 0.0) return c;
-  float f = 1.0 - exp(-fogDepth(d, dist));
-  vec3 fc = fogLight(d, amb) * (1.0 + uFog.z * 2.0 * exp(-abs(d.y) * 40.0));
-  return mix(c, fc, f);
+  return mix(c, fogLight(d, amb), 1.0 - exp(-fogDepth(d, dist)));
 }
 
 // ── Far land: hills, mountains, forest and city in 3D ──
@@ -1646,6 +1651,8 @@ const mat2 LAND_ROT = mat2(0.8, 0.6, -0.6, 0.8);
 float landNear() { return 1000.0 * uLandB.x; }
 float landFar() { return landNear() * (uLand.x > 3.5 ? 3.0 + 2.5 * uLand.w : 8.0 + 14.0 * uLand.w); }
 float curveDrop(float r) { return r * r / (2.0 * EARTH_R); }
+// Relief height per metre of distance, in units of tan(Height): hills, mountains, forest floor.
+float landGain() { return uLand.x < 1.5 ? 1.3 : uLand.x < 2.5 ? 1.8 : 0.45; }
 
 // Sky light on a surface facing n: mostly the part of the sky it faces, so a facade turned away
 // from a sunset stays dusky blue instead of catching the glow behind it.
@@ -1727,7 +1734,7 @@ float canopy(vec2 p, float px, inout vec2 g) {
 float landHeight(vec2 p, float px, out vec2 g) {
   float r = length(p), type = uLand.x;
   float L = type < 1.5 ? 1700.0 : type < 2.5 ? 2600.0 : 1500.0;
-  float A = tan(uLand.y * DEG) * clamp(r - 0.4 * landNear(), 0.6 * landNear(), 30000.0) * (type < 1.5 ? 1.3 : type < 2.5 ? 1.8 : 0.45);
+  float A = tan(uLand.y * DEG) * clamp(r - 0.4 * landNear(), 0.6 * landNear(), 30000.0) * landGain();
   int oct = int(clamp(log2(L / max(px, 1.0)), 2.0, type < 2.5 ? 9.0 : 5.0));
   vec2 q = rot2(p, uLandB.y) / L + uLandB.z * vec2(0.71, 1.37);
   vec3 n = relief(q, oct, type < 1.5 ? 0.35 : type < 2.5 ? 0.6 + 1.4 * uLand.z : 0.2);
@@ -1769,8 +1776,9 @@ float landTrace(vec3 ro, vec3 rd, float fp) {
   float far = landFar(), t = shoreEntry(ro, rd), kStep = uLand.x > 1.5 && uLand.x < 2.5 ? 0.4 : 0.5;
   // Tree cones are steep: step finely only inside the canopy band (trees stand at most 26 m).
   float band = uLand.x > 2.5 ? 26.0 : 0.0;
-  // The steepest apparent slope anything can reach: a ray climbing faster, above it, is clear.
-  float top = tan(uLand.y * DEG) * 1.6 + (uPeak.x > 0.0 ? tan(uPeak.x * DEG) : 0.0);
+  // The steepest apparent slope anything can reach (relief stays below 1, so landHeight's v below
+  // 1.42; the volcano adds its own): a ray climbing faster, above it, is clear.
+  float top = tan(uLand.y * DEG) * landGain() * 1.42 + (uPeak.x > 0.0 ? tan(uPeak.x * DEG) : 0.0);
   float tPrev = t, dPrev = 1e9;
   for (int i = 0; i < 300; i++) {
     vec3 p = ro + rd * t;
@@ -1833,10 +1841,7 @@ vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
       if (sh < 0.02 || q.y > 9000.0) break;
     }
   }
-  vec3 c = alb * (directLight(n) * sh + skyFacing(n, amb) * (0.55 + 0.45 * n.y)) * ao;
-  vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
-  c = c * tr + horizonSky(rd) * (1.0 - tr);
-  return applyFog(c, rd, t, amb);
+  return alb * (directLight(n) * sh + skyFacing(n, amb) * (0.55 + 0.45 * n.y)) * ao;
 }
 
 // ── City ──
@@ -1863,7 +1868,8 @@ float gBeacon = 0.0;  // red aviation lights the ray passed close to
 
 // The first building face or street a ray meets, walking the lot grid cell by cell, or -1.
 float cityTrace(vec3 ro, vec3 rd, float fp, out vec3 n) {
-  float t = shoreEntry(ro, rd), top = 340.0 * uLand.y * 0.5 - uSurf.y;
+  // Above top (over the tallest building cityLot can make, 446 m before scaling) nothing is hit.
+  float t = shoreEntry(ro, rd), top = 450.0 * uLand.y * 0.5 - uSurf.y;
   n = vec3(0.0, 1.0, 0.0);
   vec2 v = rd.xz, o = ro.xz + v * t, c = floor(o / CITY_G), s = vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
   vec2 inv = 1.0 / max(abs(v), vec2(1e-7));
@@ -1923,9 +1929,10 @@ vec3 cityShade(vec3 ro, vec3 rd, float t, vec3 n, float fp, vec3 amb) {
     float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-rd, n), 0.0), 5.0);
     vec3 refl = mix(horizonSky(R), physicalSky(normalize(vec3(R.x, max(R.y, 0.02), R.z))), smoothstep(0.0, 0.3, R.y));
     refl += sunLight(normalize(R + vec3(0.0, 1e-4, 0.0)), max(fp, 0.004)) * 0.3;
+    vec3 sky = skyFacing(n, amb);
     // Tinted, coated glass: a dim mirror head-on that brightens toward grazing.
-    vec3 glass = refl * mix(0.05, 0.5, fres) + vec3(0.015, 0.02, 0.025) * skyFacing(n, amb);
-    c = mix(wall * (directLight(n) + skyFacing(n, amb) * 0.85), glass, cover);
+    vec3 glass = refl * mix(0.05, 0.5, fres) + vec3(0.015, 0.02, 0.025) * sky;
+    c = mix(wall * (directLight(n) + sky * 0.85), glass, cover);
     uint hh = hash3u(uvec3(uvec2(ivec2(floor(w)) + 65536), uint(id * 1e6)));
     // A share of windows lit, warm or cool and at varied levels; the far average stays dim so towers
     // read as dark masses pricked with light rather than glowing slabs.
@@ -1934,9 +1941,7 @@ vec3 cityShade(vec3 ro, vec3 rd, float t, vec3 n, float fp, vec3 amb) {
     c += mix(lamp * on * win * 3.0, uCityColor * lights * 0.6 * 0.6 * winAvg * 1.8, lod) * uNightScale;
     c *= mix(0.6, 1.0, smoothstep(0.0, 30.0, up));
   }
-  vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
-  c = c * tr + horizonSky(rd) * (1.0 - tr);
-  return applyFog(c, rd, t, amb);
+  return c;
 }
 
 vec2 noiseGrad(vec3 c, float rate, int ch) {
@@ -2038,8 +2043,7 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
   if (uMoon.x > 0.0) {
     // The disk is drawn far below its true radiance so its face stays visible; the glitter path
     // uses a brighter moon so it reads the way it does in a night photograph.
-    vec3 Tm = mix(vec3(1.0), transmittance(OBS, max(uMoonDir.y, 0.0)) / transmittance(OBS, 1.0), uStarLook.w);
-    spec += Tm * uMoon.z * 250.0 * PI * uMoon.y * uMoon.y * (0.5 + 0.5 * uMoonLight.z) * glint(n, v, uMoonDir, w.x + 2e-5 + uMoon.y * uMoon.y);
+    spec += skyExtinction(uMoonDir.y) * uMoon.z * 250.0 * PI * uMoon.y * uMoon.y * (0.5 + 0.5 * uMoonLight.z) * glint(n, v, uMoonDir, w.x + 2e-5 + uMoon.y * uMoon.y);
   }
   vec3 E = directLight(vec3(0.0, 1.0, 0.0)) * gShade + amb;
   vec3 body;
@@ -2188,8 +2192,10 @@ vec3 grassLight(vec3 alb, vec3 n, vec3 d, float y, float gap, vec3 amb) {
   float H = uGrass.x;
   vec3 col = alb * amb * mix(0.22, 1.0, pow(clamp(y / H, 0.0, 1.0), 0.6));
   vec3 L = uSunDir;
-  float k = gSigma * max(H - y, 0.0) / max(L.y, 0.04);
-  float shadow = gap >= 0.0 ? exp(-k * (0.3 + 1.4 * gap)) : exp(-0.3 * k) * (1.0 - exp(-1.4 * k)) / max(1.4 * k, 1e-4);
+  float k = gSigma * max(H - y, 0.0) / max(L.y, 0.04), x = max(1.4 * k, 1e-4);
+  // The average over gap in [0, 1] is exp(-0.3 k) (1 - exp(-x)) / x, which goes to 1 (not 0) as k
+  // does: tips above the canopy are in full sun.
+  float shadow = gap >= 0.0 ? exp(-k * (0.3 + 1.4 * gap)) : exp(-0.3 * k) * (1.0 - exp(-x)) / x;
   float ndl = dot(n, L);
   vec3 lit = ndl > 0.0 ? alb * ndl : alb * vec3(1.3, 1.5, 0.55) * (-ndl);
   vec3 hv = normalize(L - d);
@@ -2243,8 +2249,9 @@ vec3 grassGround(vec2 P, float rate, vec3 amb) {
 
 // Blades below pixel size: the expected first hit, estimated with fixed stratified samples of the
 // same blade population the tracer uses (height profile, face angles weighted by projected area,
-// colours and lighting), so the far field matches the traced blades on average.
-vec3 grassCanopy(vec3 d, vec2 P, float rate, vec3 amb) {
+// colours and lighting), so the far field matches the traced blades on average. soil is the
+// ground's colour at P, seen through the gaps.
+vec3 grassCanopy(vec3 d, vec2 P, float rate, vec3 soil, vec3 amb) {
   float H = uGrass.x, S = uSurf.z;
   float cb = max(length(d.xz), 1e-4), cot = cb / max(-d.y, 1e-4);
   vec2 dh = d.xz / cb;
@@ -2268,11 +2275,11 @@ vec3 grassCanopy(vec3 d, vec2 P, float rate, vec3 amb) {
     }
     for (int j = 0; j < 4; j++) {
       float s = asin((float(j) + 0.5) * 0.5 - 1.0);
-      vec2 nh = -vec2(dh.x * cos(s) - dh.y * sin(s), dh.x * sin(s) + dh.y * cos(s));
+      vec2 nh = -rot2(dh, s);
       sum += grassLight(alb, normalize(vec3(nh.x, (float(j & 1) - 0.5) * 0.6 * yy, nh.y)), d, y, -1.0, amb);
     }
   }
-  vec3 col = mix(sum / 20.0, grassGround(P, rate, amb), exp(-tauTot));
+  vec3 col = mix(sum / 20.0, soil, exp(-tauTot));
   // Structure the eye still resolves: clumps, dry patches, gusts combing across the field, and
   // blade-scale streaks that carry the traced texture past the hand-off distance.
   vec4 nA = nz(vec3(P / (5.0 * S) * 0.1, 0.23), rate / (5.0 * S) * 0.1);
@@ -2747,8 +2754,7 @@ vec3 aurora(vec3 d, float fp, float jitter) {
                + (nz(vec3(along * 0.003, time * 0.004, 0.71), rate * 3.0).a - 0.5) * 90.0
                + (nz(vec3(along * 0.012, time * 0.01, 0.55), rate * 12.0).r - 0.5) * 18.0;
     float c = across - base - fold;
-    float band = exp(-0.5 * pow(c / 7.0, 2.0)) + 0.55 * exp(-0.5 * pow((c - 120.0) / 10.0, 2.0)) + 0.35 * exp(-0.5 * pow((c + 260.0) / 12.0, 2.0));
-    band += 0.1 * exp(-0.5 * pow(c / 90.0, 2.0));
+    float band = gauss(c / 7.0) + 0.55 * gauss((c - 120.0) / 10.0) + 0.35 * gauss((c + 260.0) / 12.0) + 0.1 * gauss(c / 90.0);
     if (band < 0.002) continue;
     // Fine vertical rays and brighter knots along the curtain.
     float rays = 0.45 + 0.55 * smoothstep(0.35, 0.8, nz(vec3(along * 0.09, time * 0.03, 0.13 + hf * 0.04), rate * 90.0).r);
@@ -2932,13 +2938,13 @@ vec3 physicalSky(vec3 d) {
 }
 
 vec3 nightSky(vec3 d) {
-  float e = max(d.y, 0.0);
+  float e = clamp(d.y, 0.0, 1.0); // a normalized d.y can round past 1, which asin and pow reject
   vec3 c = mix(uNightZenith, uNightHorizon, pow(1.0 - e, 1.0 + uNightCurve * 10.0));
   vec2 hd = d.xz / max(length(d.xz), 1e-6);
   float facing = 0.5 + 0.5 * dot(hd, uLPDir);
   c += uLPColor * uLP.x * exp(-e / max(uLP.y, 0.005)) * mix(1.0, 2.0 * facing * facing, uLP.z);
-  float el = asin(e);
-  c += uAirglow.rgb * uAirglow.a * exp(-pow((el - 0.16) / 0.12, 2.0));
+  float ag = (asin(e) - 0.16) / 0.12;
+  c += uAirglow.rgb * uAirglow.a * exp(-ag * ag);
   return c;
 }
 
@@ -2961,7 +2967,7 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   vec3 col = physicalSky(d);
   if (d.y > -fp) {
     float above = smoothstep(-fp, fp, d.y);
-    vec3 Tv = mix(vec3(1.0), transmittance(OBS, max(d.y, 0.0)) / transmittance(OBS, 1.0), uStarLook.w);
+    vec3 Tv = skyExtinction(d.y);
     vec4 moon = uMoon.x > 0.0 ? moonDisk(d, fp) : vec4(0.0);
     vec4 body = uBodyN > 0 ? bodies(d, fp) : vec4(0.0);
     vec3 night = nightSky(d) + aurora(d, fp, jitter);
@@ -2984,7 +2990,12 @@ vec3 viewRadiance(vec3 ro, vec3 d, float fp, float fpOut, float jitter, vec3 amb
     gBeacon = 0.0;
     float t = uLand.x > 3.5 ? cityTrace(ro, d, fp, n) : landTrace(ro, d, fp);
     beacon = vec3(1.0, 0.07, 0.03) * gBeacon * 6.0 * uNightScale * uLandB.w;
-    if (t > 0.0) return beacon + (uLand.x > 3.5 ? cityShade(ro, d, t, n, fp, amb) : landShade(ro, d, t, fp, amb));
+    if (t > 0.0) {
+      vec3 c = uLand.x > 3.5 ? cityShade(ro, d, t, n, fp, amb) : landShade(ro, d, t, fp, amb);
+      // Aerial perspective: Rayleigh-blue extinction plus haze over the distance, then fog.
+      vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
+      return beacon + applyFog(c * tr + horizonSky(d) * (1.0 - tr), d, t, amb);
+    }
   }
   return beacon + skyAbove(d, fp, fpOut, jitter, amb);
 }
@@ -3038,7 +3049,7 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
       // Ground fog, then aerial perspective, between the eye and the ground.
       if (uFog.x > 0.0) {
         float f = 1.0 - exp(-fogDepth(d, Dm));
-        acc += T * f * fogLight(d, amb) * (1.0 + uFog.z * 2.0 * exp(-abs(d.y) * 40.0));
+        acc += T * f * fogLight(d, amb);
         T *= 1.0 - f;
       }
       float hz = hazeT(Dm * 0.001);
@@ -3047,10 +3058,13 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
     }
     bool wall = inGrass && !ground && tEnd < t1 - 1e-3;
     if ((hit && grassy) || wall) {
-      float tc = clamp(tEnd, 0.7 * tRes, hit ? Dm : 1e4);
+      // Bare ground where the traced blades reached it, else the far canopy over that ground.
+      bool bare = hit && tEnd >= Dm - 1e-3;
+      float tc = bare ? Dm : clamp(tEnd, 0.7 * tRes, hit ? Dm : 1e4);
       vec3 dd = wall ? normalize(vec3(d.x, -0.03, d.z)) : d;
-      acc += T * (hit && tEnd >= Dm - 1e-3 ? grassGround(d.xz * Dm, rate, amb)
-                                           : grassCanopy(dd, d.xz * tc, fp * tc * inversesqrt(max(-dd.y, 0.02)), amb));
+      float rc = fp * tc * inversesqrt(max(-dd.y, 0.02));
+      vec3 soil = grassGround(d.xz * tc, rc, amb);
+      acc += T * (bare ? soil : grassCanopy(dd, d.xz * tc, rc, soil, amb));
       break;
     }
     if (hit && water) {
@@ -3073,8 +3087,10 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
     acc += T * viewRadiance(ro, rd, fp, fpOut, jitter, amb);
     break;
   }
+  // Globals outlive the call: the next sample of this pixel must start clean.
   gMirror = false;
   gNoLand = false;
+  gShade = 1.0;
   return acc;
 }
 
@@ -3246,6 +3262,23 @@ function target(w, h, format = gl.RGBA8) {
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   return { tex, fbo, w, h, free() { gl.deleteFramebuffer(fbo); gl.deleteTexture(tex); } };
+}
+
+// Keeps a reusable target while its size holds, else replaces it.
+function fitTarget(t, w, h, format) {
+  if (t && t.w === w && t.h === h) return t;
+  if (t) t.free();
+  return target(w, h, format);
+}
+
+// Copies the bound framebuffer into a 2D canvas, flipping it upright.
+function readInto(ctx, w, h) {
+  const px = new Uint8ClampedArray(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  const img = new ImageData(w, h);
+  for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+  ctx.putImageData(img, 0, 0);
 }
 
 gl.bindVertexArray(gl.createVertexArray());
@@ -3481,7 +3514,6 @@ function derive(img) {
   const sunY = atmo.Ysun * P.sunIntensity;
   const gain = KEY / (sunY + (P.moon ? atmo.Ymoon * moonI : 0) + NIGHT_FLOOR);
   const nightVis = gain * NIGHT_FLOOR / KEY, sunVis = gain * sunY / KEY;
-  D.gain = gain;
   D.sunScale = P.sunIntensity * gain * ev;
   D.moonScale = moonI * gain * ev;
   D.nightScale = nightVis * ev;
@@ -3538,7 +3570,7 @@ function drawSky(fbo, w, h, pix0, step, values, opts = {}) {
 // ─── Motion ─────────────────────────────────────────────────────────────────
 
 const RATES = [[1, 'Real'], [60, '1 min/s'], [600, '10 min/s'], [3600, '1 h/s'], [10800, '3 h/s']];
-Object.assign(ANIM, { playing: false, reverse: false, rate: 600, elapsed: 0, origin: null, scale: 0.7 }, store('horizon-motion') || {});
+Object.assign(ANIM, { playing: false, reverse: false, rate: 600, elapsed: 0, origin: null, scale: 0.7 }, store('horizon-motion'));
 ANIM.playing = false;
 
 function rotateAboutPole(v, deg) {
@@ -3600,6 +3632,10 @@ function setRate(rate) {
   syncUI();
 }
 
+function rateLabel() {
+  return (RATES.find(([r]) => r === ANIM.rate) || RATES[2])[1];
+}
+
 function elapsedLabel() {
   const t = Math.abs(ANIM.elapsed), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, sec = Math.floor(t) % 60;
   return (ANIM.elapsed < 0 ? '−' : '+') + (h ? `${h}:${String(m).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`) + (h ? ' h' : '');
@@ -3648,10 +3684,7 @@ function renderView(scale = 1, quality = 1) {
   const t0 = performance.now();
   if (scale < 1) {
     const w = Math.max(1, Math.round(canvas.width * scale)), h = Math.max(1, Math.round(canvas.height * scale));
-    if (!lowTarget || lowTarget.w !== w || lowTarget.h !== h) {
-      if (lowTarget) lowTarget.free();
-      lowTarget = target(w, h);
-    }
+    lowTarget = fitTarget(lowTarget, w, h);
     const m = viewMapping(w);
     drawSky(lowTarget.fbo, w, h, m.pix0, m.step, values, { quality });
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, lowTarget.fbo);
@@ -3670,10 +3703,7 @@ function renderView(scale = 1, quality = 1) {
 // buffer, and the canvas shows the running average.
 function refineView(k) {
   const w = canvas.width, h = canvas.height, m = viewMapping(w), t0 = performance.now();
-  if (!accTarget || accTarget.w !== w || accTarget.h !== h) {
-    if (accTarget) accTarget.free();
-    accTarget = target(w, h, gl.RGBA16F);
-  }
+  accTarget = fitTarget(accTarget, w, h, gl.RGBA16F);
   if (k > 0) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
   drawSky(accTarget.fbo, w, h, m.pix0, m.step, sceneValues(), { frame: k });
   gl.disable(gl.BLEND);
@@ -3699,20 +3729,12 @@ function drawLoupe() {
   if (!C.on || !C.loupe || !loupeAt) { loupeEl.classList.remove('on'); return; }
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const S = Math.round(220 * dpr);
-  if (!loupeTarget || loupeTarget.w !== S) {
-    if (loupeTarget) loupeTarget.free();
-    loupeTarget = target(S, S);
-    loupeEl.width = loupeEl.height = S;
-  }
+  if (loupeTarget?.w !== S) loupeEl.width = loupeEl.height = S;
+  loupeTarget = fitTarget(loupeTarget, S, S);
   const [ix, iy] = cssToImage(loupeAt[0], loupeAt[1]);
   const step = 0.5;
   drawSky(loupeTarget.fbo, S, S, [ix - S / 2 * step, iy - S / 2 * step], step, sceneValues(), { snap: true });
-  const px = new Uint8ClampedArray(S * S * 4);
-  gl.readPixels(0, 0, S, S, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  const img = new ImageData(S, S);
-  for (let y = 0; y < S; y++) img.data.set(px.subarray((S - 1 - y) * S * 4, (S - y) * S * 4), y * S * 4);
-  loupeCtx.putImageData(img, 0, 0);
+  readInto(loupeCtx, S, S);
   loupeEl.style.left = loupeAt[0] - 110 + 'px';
   loupeEl.style.top = loupeAt[1] - 110 + 'px';
   loupeEl.classList.add('on');
@@ -3782,7 +3804,7 @@ async function encodePNG(rgba, W, H, progress) {
       progress((y0 + n) / H);
       await nextFrame();
       t0 = performance.now();
-      if (job.cancel) { writer.abort(); return null; }
+      if (job.cancel) { compressed.catch(() => {}); writer.abort(); return null; }
     }
   }
   await writer.close();
@@ -3841,6 +3863,7 @@ async function renderTiles(W, H, opts, onTile) {
 function runExport() {
   if (job) return;
   setPlaying(false);
+  job = { cancel: false, error: null };
   (C.format === 'mp4' ? recordVideo : saveStill)().catch(e => toast(e.message)).finally(() => {
     job = null;
     $('busy').classList.remove('on');
@@ -3851,7 +3874,6 @@ function runExport() {
 
 async function saveStill() {
   const [W, H] = captureDims(), label = `${W} × ${H}`, format = C.format;
-  job = { cancel: false };
   busy(`Rendering ${label}`, 0, 'Preparing');
   await nextFrame();
   const rgba = await renderTiles(W, H, { step: 1, samples: C.samples, quality: C.samples > 1 ? 1.5 : 1.2 },
@@ -3884,14 +3906,18 @@ async function videoConfig(W, H, fps) {
   return null;
 }
 
+// Video frames: the capture size fitted within 3840 px, in even dimensions.
+function videoDims() {
+  const [W, H] = captureDims(), k = Math.min(1, 3840 / Math.max(W, H));
+  return [Math.round(W * k / 2) * 2, Math.round(H * k / 2) * 2];
+}
+
 async function recordVideo() {
   if (!('VideoEncoder' in window)) throw new Error('Video capture needs WebCodecs: use Chrome, Edge, or Safari 17 or newer.');
-  const [W0, H0] = captureDims(), k = Math.min(1, 3840 / Math.max(W0, H0));
-  const W = Math.round(W0 * k / 2) * 2, H = Math.round(H0 * k / 2) * 2;
+  const [W0] = captureDims(), [W, H] = videoDims();
   const fps = C.fps, frames = Math.round(C.seconds * fps), label = `${W} × ${H} · ${fps} fps`;
   const config = await videoConfig(W, H, fps);
   if (!config) throw new Error(`This browser can't encode ${W} × ${H} video at ${fps} fps. Try a smaller size or frame rate.`);
-  job = { cancel: false, error: null };
   const samples = [];
   let avcC = null;
   const encoder = new VideoEncoder({
@@ -3906,13 +3932,14 @@ async function recordVideo() {
   });
   encoder.configure(config);
   const savedP = JSON.stringify(P), savedAnim = JSON.stringify(ANIM);
-  ANIM.playing = true;
-  const step = W0 / W, rgba = new Uint8Array(W * H * 4);
   try {
+    ANIM.playing = true;
+    const step = W0 / W, rgba = new Uint8Array(W * H * 4);
     for (let f = 0; f < frames && !job.cancel && !job.error; f++) {
       if (f > 0) advance(1 / fps);
       await renderTiles(W, H, { step, samples: 1, quality: 1, into: rgba },
         t => busy(`Recording ${label}`, (f + t) / frames * 0.97, `Frame ${f + 1} of ${frames}`));
+      if (job.cancel || job.error) break;
       const frame = new VideoFrame(rgba, { format: 'RGBA', codedWidth: W, codedHeight: H, timestamp: Math.round(f * 1e6 / fps), duration: Math.round(1e6 / fps) });
       encoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
       frame.close();
@@ -3921,9 +3948,9 @@ async function recordVideo() {
     }
     if (!job.cancel && !job.error) await encoder.flush();
   } finally {
-    encoder.close();
     Object.assign(P, JSON.parse(savedP));
     Object.assign(ANIM, JSON.parse(savedAnim));
+    if (encoder.state !== 'closed') encoder.close();
   }
   if (job.error) throw new Error('The video encoder stopped: ' + job.error.message);
   if (job.cancel || !samples.length) return;
@@ -3999,7 +4026,12 @@ function presentCapture(blob, W, H, format) {
   if (!framed) save.onclick();
 }
 
-$('sheet-close').onclick = () => { $('sheet').classList.remove('on'); $('sheet-video').pause(); };
+function closeSheet() {
+  $('sheet').classList.remove('on');
+  $('sheet-video').pause();
+}
+
+$('sheet-close').onclick = closeSheet;
 $('busy-cancel').onclick = () => { if (job) job.cancel = true; };
 
 // ─── Controls ───────────────────────────────────────────────────────────────
@@ -4317,7 +4349,7 @@ const TABS = [
 ];
 
 // Camera and capture settings share one submenu, opened by the Capture button.
-const CAPTURE_MENU = { id: 'capture', sections: [
+const CAPTURE_MENU = { sections: [
     ['Frame', [
       { type: 'custom', build: buildAspect },
       { type: 'custom', build: buildDevice },
@@ -4353,8 +4385,8 @@ const CAPTURE_MENU = { id: 'capture', sections: [
         const note = el('div', 'note', body);
         refreshers.push(() => {
           note.hidden = C.format !== 'mp4';
-          const [W, H] = captureDims(), k = Math.min(1, 3840 / Math.max(W, H));
-          note.textContent = `Records ${Math.round(W * k / 2) * 2} × ${Math.round(H * k / 2) * 2} MP4 at the Motion tab's timelapse speed (${(RATES.find(([r]) => r === ANIM.rate) || RATES[2])[1]}), then returns to the current moment.`;
+          const [W, H] = videoDims();
+          note.textContent = `Records ${W} × ${H} MP4 at the Motion tab's timelapse speed (${rateLabel()}), then returns to the current moment.`;
         });
       } },
       { label: 'Thirds Grid', type: 'toggle', get: () => C.grid, set: v => setCapture({ grid: v }) },
@@ -4412,6 +4444,7 @@ function undo() {
 }
 
 function redo() {
+  commit();
   if (!history.future.length) return;
   history.past.push(history.base);
   history.base = history.future.pop();
@@ -4436,6 +4469,13 @@ function accessor(it) {
   };
 }
 
+// A row of segment buttons under an optional label; returns the button strip.
+function segRow(body, label, cols) {
+  const row = el('div', 'row', body);
+  if (label) el('div', 'lab', row, label);
+  return el('div', 'seg' + (cols ? ' c' + cols : ''), row);
+}
+
 function buildItem(it, body) {
   const { get, set } = accessor(it);
   if (it.type === 'custom') return it.build(body);
@@ -4456,9 +4496,7 @@ function buildItem(it, body) {
     return;
   }
   if (it.type === 'choice') {
-    const row = el('div', 'row', body);
-    el('div', 'lab', row, it.label);
-    const seg = el('div', 'seg' + (it.cols ? ' c' + it.cols : ''), row);
+    const seg = segRow(body, it.label, it.cols), row = seg.parentNode;
     for (const o of it.options) {
       const b = el('button', 'btn', seg, o.title);
       b.onclick = () => { set(o.value); it.after?.(); changed(); };
@@ -4484,7 +4522,7 @@ function buildItem(it, body) {
   const input = el('input', null, row);
   Object.assign(input, { type: 'range', min: it.min, max: it.max, step: it.step });
   input.oninput = () => { set(parseFloat(input.value)); it.after?.(); changed(); };
-  if (it.key) name.ondblclick = () => { set(DEFAULTS[resolveKey(it.key)]); changed(); };
+  if (it.key) name.ondblclick = () => { set(DEFAULTS[resolveKey(it.key)]); it.after?.(); changed(); };
   refreshers.push(() => {
     if (it.range) { const [a, b] = it.range(); input.min = a; input.max = b; }
     input.value = get();
@@ -4494,9 +4532,7 @@ function buildItem(it, body) {
 }
 
 function buildSurfaces(body) {
-  const row = el('div', 'row', body);
-  el('div', 'lab', row, 'Surface Type');
-  const seg = el('div', 'seg c3', row);
+  const seg = segRow(body, 'Surface Type', 3);
   for (const [title, type, values] of SURFACES) {
     const b = el('button', 'btn', seg, title);
     b.onclick = () => { Object.assign(P, values, { surface: type }); changed(); };
@@ -4505,8 +4541,7 @@ function buildSurfaces(body) {
 }
 
 function buildLayerPicker(body) {
-  const row = el('div', 'row', body);
-  const seg = el('div', 'seg c3', row);
+  const seg = segRow(body, null, 3);
   for (let i = 0; i < 3; i++) {
     const b = el('button', 'btn', seg);
     b.onclick = () => { cloudSel = i; syncUI(); };
@@ -4518,9 +4553,7 @@ function buildLayerPicker(body) {
 }
 
 function buildCloudTypes(body) {
-  const row = el('div', 'row', body);
-  el('div', 'lab', row, 'Cloud Type');
-  const seg = el('div', 'seg c3', row);
+  const seg = segRow(body, 'Cloud Type', 3);
   for (const [name, values] of Object.entries(CLOUD_TYPES)) {
     const b = el('button', 'btn', seg, name[0].toUpperCase() + name.slice(1));
     b.onclick = () => {
@@ -4542,9 +4575,7 @@ function colorInput(key) {
 }
 
 function buildBandStyles(body) {
-  const row = el('div', 'row', body);
-  el('div', 'lab', row, 'Style');
-  const seg = el('div', 'seg c3', row);
+  const seg = segRow(body, 'Style', 3);
   for (const [name, values] of BAND_STYLES) {
     const b = el('button', 'btn', seg, name);
     b.onclick = () => { Object.assign(P, values); if (!P.mw) P.mw = 1; changed(); };
@@ -4553,7 +4584,7 @@ function buildBandStyles(body) {
 }
 
 function buildBodyPicker(body) {
-  const seg = el('div', 'seg c2', el('div', 'row', body));
+  const seg = segRow(body, null, 2);
   for (let i = 0; i < 2; i++) {
     const b = el('button', 'btn', seg);
     b.onclick = () => { bodySel = i; syncUI(); };
@@ -4565,9 +4596,7 @@ function buildBodyPicker(body) {
 }
 
 function buildBodyTypes(body) {
-  const row = el('div', 'row', body);
-  el('div', 'lab', row, 'Kind');
-  const seg = el('div', 'seg c3', row);
+  const seg = segRow(body, 'Kind', 3);
   BODY_TYPES.forEach(([name, values], type) => {
     const b = el('button', 'btn', seg, name);
     b.onclick = () => {
@@ -4580,9 +4609,7 @@ function buildBodyTypes(body) {
 }
 
 function buildAspect(body) {
-  const row = el('div', 'row', body);
-  el('div', 'lab', row, 'Aspect Ratio');
-  const seg = el('div', 'seg', row);
+  const seg = segRow(body, 'Aspect Ratio');
   for (const [name, a, b] of ASPECTS) {
     const btn = el('button', 'btn', seg, name);
     btn.onclick = () => setCapture({ ratio: a / b });
@@ -4610,9 +4637,7 @@ function buildDevice(body) {
 }
 
 function buildSize(body) {
-  const row = el('div', 'row', body);
-  el('div', 'lab', row, 'Long Edge');
-  const seg = el('div', 'seg c3', row);
+  const seg = segRow(body, 'Long Edge', 3);
   for (const [name, L] of SIZES) {
     const btn = el('button', 'btn', seg, name);
     btn.onclick = () => setCapture({ long: L });
@@ -4784,7 +4809,7 @@ function buildUI() {
   staticRefreshers.push(() => {
     play.innerHTML = svg(ANIM.playing ? '<path d="M5 3.5v9M11 3.5v9"/>' : '<path d="M5 3l8 5-8 5z"/>');
     play.classList.toggle('on', ANIM.playing);
-    rateBtn.textContent = (RATES.find(([r]) => r === ANIM.rate) || RATES[2])[1];
+    rateBtn.textContent = rateLabel();
     clock.textContent = elapsedLabel();
   });
   const group = el('div', 'capgroup', bar);
@@ -4890,7 +4915,8 @@ canvas.addEventListener('gesturechange', e => {
 canvas.addEventListener('webglcontextlost', () => fail('The GPU context was lost. Reload the page to continue.'));
 
 window.addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.target.matches('input[type=number], select')) {
+  if (job) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.target.matches('input:not([type=range], [type=color]), select')) {
     e.preventDefault();
     e.shiftKey ? redo() : undo();
     return;
@@ -4906,7 +4932,7 @@ window.addEventListener('keydown', e => {
     const i = RATES.findIndex(([r]) => r === ANIM.rate);
     setRate(RATES[clamp(i + (k === ']' ? 1 : -1), 0, RATES.length - 1)][0]);
   }
-  else if (k === 'escape') { if ($('sheet').classList.contains('on')) $('sheet').classList.remove('on'); else if (C.on) setCaptureMode(false); }
+  else if (k === 'escape') { if ($('sheet').classList.contains('on')) closeSheet(); else if (C.on) setCaptureMode(false); }
 });
 window.addEventListener('resize', layout);
 
