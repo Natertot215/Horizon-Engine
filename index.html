@@ -450,15 +450,13 @@ function whiteBalance() {
 
 // ─── Looks ──────────────────────────────────────────────────────────────────
 
-const LAKE = { surface: 1, surfWaves: 0.3 };
-
 const PRESETS = [
   { name: 'Fuji Twilight', p: {
     sunElev: -13.5, sunHeading: 295, heading: 205, pitch: 9, fov: 70,
     ozone: 2, mie: 1.4, skyFill: 0.8,
     nightBright: 1.6, nightZenith: '#151640', nightHorizon: '#5d4f8f', nightCurve: 0.5, nightVibrance: 0.3, airglow: 0.02, lpStrength: 0,
     starDensity: 0.7, starDepth: 0.85, starBright: 1.6, starSize: 0.75, starColor: 0.3,
-    ...LAKE, surfColorA: '#0d1424', surfColorB: '#0d1424', surfWaves: 0.2,
+    surfColorA: '#0d1424', surfColorB: '#0d1424', surfWaves: 0.2,
     land: 3, landHeight: 1.7, landLayers: 2, landColor: '#11131b', forestMix: 1, forestDensity: 0.95,
     peak: 7.5, peakHeading: 205, peakWidth: 24, peakSnow: 0.42,
     fog: 0.5, fogHeight: 15, fogGlow: 0.8, fogColor: '#c3c6e8', haze: 0.45,
@@ -468,7 +466,7 @@ const PRESETS = [
     sunElev: -1.2, sunHeading: 250, heading: 245, pitch: 16, fov: 75,
     ...cloudLayer(1, 'altocumulus', { Cover: 0.55, Dens: 0.9, Alt: 4.5, Thick: 0.32, Scale: 0.9, Cells: 0.9 }),
     cGlow: 1.8, cLightTint: '#ff5a2a', cLightAmt: 0.45, cShadowTint: '#1d2440', cShadowAmt: 0.6,
-    ...LAKE, surfWaves: 0.15, land: 4, landHeight: 2, landLayers: 2, landDepth: 1.6, landHeading: 245, cityLights: 0.5, landColor: '#0e1016',
+    surfWaves: 0.15, land: 4, landHeight: 2, landLayers: 2, landDepth: 1.6, landHeading: 245, cityLights: 0.5, landColor: '#0e1016',
     ev: -0.4, tone: 2, temp: 0.25, contrast: 1.2, saturation: 1.05,
   } },
   { name: 'Veiled Night', p: {
@@ -516,7 +514,7 @@ const PRESETS = [
   { name: 'Aurora Lake', p: {
     sunElev: -25, heading: 0, pitch: 14, fov: 95,
     aurora: 1.4, auroraSpread: 0.45, starDensity: 0.85, starSizeVar: 0.5,
-    ...LAKE, surfWaves: 0.12, land: 2, landHeight: 3.5, landLayers: 2, landColor: '#0b0c12',
+    surfWaves: 0.12, land: 2, landHeight: 3.5, landLayers: 2, landColor: '#0b0c12',
   } },
   { name: 'Mirror Flats', p: {
     sunElev: -2.5, sunHeading: 250, heading: 240, pitch: 6, fov: 85,
@@ -531,8 +529,9 @@ const PRESETS = [
     ...cloudLayer(0, 'cumulus', { Cover: 0.32 }),
   } },
   { name: 'Dune Sunset', p: {
-    sunElev: 3, sunHeading: 255, heading: 215, pitch: 0, fov: 72,
-    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', surfWaves: 0.7, relief: 1.2, eyeHeight: 6, haze: 0.3, mie: 1.5,
+    sunElev: 3, sunHeading: 255, heading: 225, pitch: 0, fov: 72,
+    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', surfWaves: 0.7, surfWind: 305, surfScale: 1.5, relief: 1.8, eyeHeight: 10,
+    haze: 0.3, mie: 1.5, tone: 3, contrast: 1.15,
   } },
   { name: 'High Noon', p: {
     sunElev: 55, sunHeading: 180, heading: 200, pitch: 12, fov: 90,
@@ -543,20 +542,21 @@ const PRESETS = [
   { name: 'Star Trails', p: {
     sunElev: -30, latitude: 35, heading: 0, pitch: 28, fov: 110, trails: 75, trailDensity: 0.5,
     surface: 0, surfColorA: '#0d0e14', surfColorB: '#08090d',
-    land: 3, landHeight: 2.2, landLayers: 2, landColor: '#0a0b10', forestMix: 1, forestDensity: 0.9,
+    land: 3, landHeight: 2.2, landLayers: 2, landDepth: 0.4, landColor: '#0a0b10', forestMix: 1, forestDensity: 0.9,
   } },
   { name: 'Moonlit Snow', p: {
     sunElev: -30, moon: true, moonPhase: 0.5, moonElev: 30, moonHeading: 160, moonHalo: 0.8, moonLight: 3,
     heading: 160, pitch: 10, fov: 85,
     surface: 6, surfColorA: '#eef2fa', surfColorB: '#cad6ea', surfSparkle: 0.8, relief: 0.8,
-    land: 2, landHeight: 5, landColor: '#4a4f5c', landSnow: 0.85, landDepth: 2,
+    land: 2, landHeight: 5, landColor: '#4a4f5c', landSnow: 1, landDepth: 2,
   } },
   { name: 'Deep Space', p: {
     sunElev: -45, heading: 90, pitch: 89, fov: 80,
     nightZenith: '#05030c', nightHorizon: '#05030c', airglow: 0, lpStrength: 0,
-    neb: 1.1, nebScale: 0.8, nebWarp: 0.6, nebA: '#e8466a', nebB: '#2a8fd0',
-    mw: 0.4, starDensity: 1, starDepth: 1, starColor: 0.7, starSizeVar: 0.6,
-    gal: 0.8, galSize: 12, galElev: 70, galHeading: 30,
+    neb: 1, nebScale: 0.55, nebWarp: 0.3, nebSeed: 6, nebA: '#e8466a', nebB: '#2a8fd0',
+    mw: 0.3, starDensity: 1, starDepth: 1, starColor: 0.7, starSizeVar: 0.6,
+    gal: 1.1, galSize: 14, galElev: 70, galHeading: 30,
+    contrast: 1.2, lift: -0.01,
   } },
   { name: 'Ringed Giant', p: {
     sunElev: -22, heading: 200, pitch: 14, fov: 70,
@@ -564,7 +564,7 @@ const PRESETS = [
     starDensity: 0.8, starSizeVar: 0.5, mw: 0.6, surfWaves: 0.3,
   } },
   { name: 'Lone Tree', p: {
-    sunElev: 1.5, sunHeading: 120, heading: 200, pitch: 5, fov: 55,
+    sunElev: 1.5, sunHeading: 45, heading: 200, pitch: 5, fov: 55,
     trees: 1, treeHeight: 10, treeNear: 75, treeHeading: 197, treeWidth: 1.15,
     surfWaves: 0.05, land: 2, landHeight: 4.5, landLayers: 2, landColor: '#56504c', landSnow: 0.7, landDepth: 3, haze: 0.3,
     ...cloudLayer(2, 'cirrus', { Cover: 0.35, Dens: 0.25 }), cGlow: 1.4, cLightTint: '#ffb08a', cLightAmt: 0.3,
@@ -577,18 +577,19 @@ const PRESETS = [
     ...cloudLayer(0, 'cumulus', { Cover: 0.28 }),
   } },
   { name: 'Alpine Lake', p: {
-    sunElev: 3, sunHeading: 285, heading: 205, pitch: 3, fov: 65,
-    surfWaves: 0.07, land: 2, landHeight: 9, landLayers: 3, landColor: '#5a524c', landSnow: 0.65, landDepth: 2.5, haze: 0.25,
+    sunElev: 6, sunHeading: 70, heading: 205, pitch: 3, fov: 65,
+    surfWaves: 0.03, land: 2, landHeight: 9, landLayers: 3, landColor: '#5a524c', landSnow: 0.65, landDepth: 2.5, haze: 0.25,
   } },
   { name: 'Twin Moons', p: {
-    sunElev: -7, sunHeading: 260, heading: 230, pitch: 8, fov: 70,
-    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', relief: 1, eyeHeight: 5,
-    b0On: true, b0Type: 4, b0ColorA: '#1e4f8c', b0ColorB: '#6a7a3c', b0Atmo: 0.9, b0Ring: 0, b0Size: 22, b0Elev: 14, b0Heading: 215, b0Phase: 0.55, b0Light: 160,
-    b1On: true, b1Type: 5, b1ColorA: '#1d1612', b1ColorB: '#ff6a1f', b1Atmo: 0.2, b1Size: 5, b1Elev: 30, b1Heading: 245, b1Phase: 0.4,
+    sunElev: -10, sunHeading: 260, heading: 230, pitch: 8, fov: 70,
+    surface: 5, surfColorA: '#d8a874', surfColorB: '#5a3520', surfWind: 310, surfScale: 1.4, relief: 1.8, eyeHeight: 12,
+    b0On: true, b0Type: 4, b0ColorA: '#1e4f8c', b0ColorB: '#6a7a3c', b0Atmo: 0.9, b0Ring: 0, b0Size: 20, b0Elev: 14, b0Heading: 208, b0Phase: 0.62, b0Light: -10,
+    b1On: true, b1Type: 2, b1ColorA: '#c47c45', b1ColorB: '#6d3f25', b1Atmo: 0.15, b1Size: 9, b1Elev: 17, b1Heading: 250, b1Phase: 0.5, b1Light: -10,
   } },
   { name: 'Galaxy Rise', p: {
     sunElev: -25, heading: 200, pitch: 18, fov: 85,
-    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', relief: 1, eyeHeight: 4,
+    moon: true, moonPhase: 0.3, moonElev: 5, moonHeading: 290, moonLight: 3, moonGlow: 0.2,
+    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', surfScale: 1.4, relief: 1.5, eyeHeight: 6,
     gal: 1.3, galSize: 45, galElev: 22, galHeading: 200, galIncl: 62, galAngle: 25, mw: 0.5, starSizeVar: 0.5,
   } },
   { name: 'Ocean Glitter', p: {
@@ -599,8 +600,8 @@ const PRESETS = [
   { name: 'Pine Ridge', p: {
     sunElev: 4, sunHeading: 100, heading: 130, pitch: 2, fov: 70,
     surface: 3, surfColorA: '#2f4a1a', surfColorB: '#7d8c3a', grassHeight: 0.35,
-    land: 3, forestMix: 1, forestDensity: 0.95, landHeight: 3.2, landLayers: 4, landColor: '#16201a', landDepth: 1.5,
-    fog: 0.7, fogHeight: 50, fogGlow: 0.6,
+    land: 3, forestMix: 1, forestDensity: 0.95, landHeight: 6, landLayers: 4, landColor: '#16201a', landDepth: 0.6,
+    fog: 0.35, fogHeight: 30, fogGlow: 0.6,
     trees: 4, treeType: 1, treeHeight: 22, treeNear: 30, treeFar: 120, treeSpread: 100, treeHeading: 140,
   } },
 ];
@@ -817,6 +818,10 @@ const float RG = 6360.0, RT = 6460.0, OBS = 6360.05;
 const vec3 RAY_SCA = vec3(5.802e-3, 13.558e-3, 33.1e-3);
 const float MIE_SCA = 3.996e-3, MIE_EXT = 4.4e-3;
 const vec3 OZONE_ABS = vec3(0.650e-3, 1.881e-3, 0.085e-3);
+
+// Distance from the eye out to the sphere of radius r around the Earth's centre along a ray with
+// b = OBS * d.y.
+float shellDist(float b, float r) { return -b + sqrt(max(b * b - (OBS * OBS - r * r), 0.0)); }
 
 vec3 densities(float h) {
   return vec3(exp(-h / 8.0) * uAtmo.x, exp(-h / 1.2) * uAtmo.y, max(0.0, 1.0 - abs(h - 25.0) / 15.0) * uAtmo.z);
@@ -1524,9 +1529,7 @@ float cloudDensity(int i, vec3 pw, float hf, float rate, bool detailed) {
 vec4 cloudLayer(int i, vec3 d, float fp, float jitter) {
   float hb = uCloudA[i].z, th = uCloudA[i].w;
   float rIn = RG + hb, rOut = rIn + th;
-  float b = OBS * d.y;
-  float t0 = -b + sqrt(max(b * b - (OBS * OBS - rIn * rIn), 0.0));
-  float t1 = -b + sqrt(max(b * b - (OBS * OBS - rOut * rOut), 0.0));
+  float t0 = shellDist(OBS * d.y, rIn), t1 = shellDist(OBS * d.y, rOut);
   float tEnd = min(t1, t0 + 12.0 * th + 20.0);
   if (tEnd <= t0) return vec4(0.0, 0.0, 0.0, 1.0);
   float tm = 0.5 * (t0 + tEnd);
@@ -1538,7 +1541,7 @@ vec4 cloudLayer(int i, vec3 d, float fp, float jitter) {
   float glow = 1.0 + uCloudLight.z * (1.0 - smoothstep(-0.05, 0.25, uSunDir.y));
   vec3 tint = mix(vec3(1.0), uCloudTint.rgb / max(luma(uCloudTint.rgb), 0.05), uCloudTint.a);
   vec3 lightCol = (moonLit ? uMoonScale : uSunScale * glow) * transmittance(rm, dot(up, L)) * tint * uCloudLight.w;
-  vec3 ambTop = physicalSky(vec3(0.0, 1.0, 0.0)) + nightSky(vec3(0.0, 1.0, 0.0)) * uNightScale;
+  vec3 ambTop = skyLight(vec3(0.0, 1.0, 0.0));
   vec3 ambBot = cloudAmbient * 0.6;
   vec2 hd = d.xz / max(length(d.xz), 1e-6);
   ambBot += uLPColor * uLP.x * uCloudMisc.y * uNightScale * mix(1.0, 2.0 * pow(0.5 + 0.5 * dot(hd, uLPDir), 2.0), uLP.z) * (1.0 - 0.5 * smoothstep(0.0, 0.6, d.y));
@@ -1599,10 +1602,7 @@ vec4 clouds(vec3 d, float fp, float jitter, vec3 amb) {
 `;
 
 const GLSL_LAND = `
-vec3 horizonSky(vec3 d) {
-  vec3 h = normalize(vec3(d.x, 0.006, d.z) + vec3(1e-5, 0.0, 0.0));
-  return physicalSky(h) + nightSky(h) * uNightScale;
-}
+vec3 horizonSky(vec3 d) { return skyLight(normalize(vec3(d.x, 0.006, d.z) + vec3(1e-5, 0.0, 0.0))); }
 
 vec3 skyAmbient() {
   vec3 toSun = normalize(vec3(uSunDir.x, 0.0, uSunDir.z) + vec3(1e-4, 0.0, 0.0));
@@ -1611,9 +1611,12 @@ vec3 skyAmbient() {
     + (nightSky(vec3(0.0, 1.0, 0.0)) + uLPColor * uLP.x * 0.25) * uNightScale;
 }
 
+// Sun and moon irradiance at the eye, set at the start of sceneColor.
+vec3 gSunE, gMoonE;
+
 vec3 directLight(vec3 n) {
-  vec3 E = uSunScale * transmittance(OBS, uSunDir.y) * max(dot(n, uSunDir), 0.0);
-  if (uMoonScale > 0.0) E += uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0)) * max(dot(n, uMoonDir), 0.0);
+  vec3 E = gSunE * max(dot(n, uSunDir), 0.0);
+  if (uMoonScale > 0.0) E += gMoonE * max(dot(n, uMoonDir), 0.0);
   return E / PI;
 }
 
@@ -1628,7 +1631,7 @@ float fogDepth(vec3 d, float dist) {
 
 // Light the fog scatters toward the eye; Fog Glow brightens it along the horizon.
 vec3 fogLight(vec3 d, vec3 amb) {
-  vec3 sun = uSunScale * transmittance(OBS, uSunDir.y) * hg(dot(d, uSunDir), 0.65) * 3.0;
+  vec3 sun = gSunE * hg(dot(d, uSunDir), 0.65) * 3.0;
   return uFogColor * (amb + sun) * (1.0 + uFog.z * 2.0 * exp(-abs(d.y) * 40.0));
 }
 
@@ -1656,10 +1659,7 @@ float landGain() { return uLand.x < 1.5 ? 1.3 : uLand.x < 2.5 ? 1.8 : 0.45; }
 
 // Sky light on a surface facing n: mostly the part of the sky it faces, so a facade turned away
 // from a sunset stays dusky blue instead of catching the glow behind it.
-vec3 skyFacing(vec3 n, vec3 amb) {
-  vec3 s = normalize(n + vec3(0.0, 0.7, 0.0));
-  return 0.65 * (physicalSky(s) + nightSky(s) * uNightScale) + 0.35 * amb;
-}
+vec3 skyFacing(vec3 n, vec3 amb) { return 0.65 * skyLight(normalize(n + vec3(0.0, 0.7, 0.0))) + 0.35 * amb; }
 
 float hashL(vec2 c) {
   uvec2 q = uvec2(ivec2(c) + 1048576);
@@ -2038,7 +2038,7 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
   r = reflect(d, n);
   under = r.y < 1e-3;
   r = normalize(vec3(r.x, max(r.y, 1e-3), r.z));
-  vec3 sunE = uSunScale * transmittance(OBS, uSunDir.y) * gShade;
+  vec3 sunE = gSunE * gShade;
   vec3 spec = sunE * glint(n, v, uSunDir, w.x + 2e-5 + uSunDisk.y * uSunDisk.y);
   if (uMoon.x > 0.0) {
     // The disk is drawn far below its true radiance so its face stays visible; the glitter path
@@ -2183,8 +2183,6 @@ float bladeHit(Blade b, vec3 rd, float tA, float tB, float pw0, out float tHit, 
   }
   return 0.0;
 }
-
-vec3 gSunE, gMoonE;
 
 // Leaf lighting: diffuse on the lit face, yellow-green transmission when backlit, a waxy sheen,
 // and sunlight that thins out toward the base of the canopy. gap < 0 averages over gap sizes.
@@ -2354,8 +2352,6 @@ void grassSetup() {
     gCell.y = clamp(float(GRASS_K) / (n * gCell.x), 0.015, 0.3);
   }
   gSigma = n * uGrass.z * 0.32;
-  gSunE = uSunScale * transmittance(OBS, uSunDir.y);
-  gMoonE = uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0));
 }
 
 // ── Trees ──
@@ -2365,7 +2361,7 @@ void grassSetup() {
 
 const int MAX_TREES = 16;
 
-struct Tree { vec3 base; vec3 c; vec3 R; float h; float seed; int type; };
+struct Tree { vec3 base; vec3 c; vec3 R; float h; float seed; int type; float rt; float trunk; };
 
 Tree treeAt(int i) {
   vec4 T = uTree[i];
@@ -2378,6 +2374,9 @@ Tree treeAt(int i) {
   if (tr.type == 1) { tr.c = vec3(0.0, 0.55, 0.0) * tr.h; tr.R = vec3(0.2 * w, 0.46, 0.2 * w) * tr.h; }
   else if (tr.type == 2) { tr.c = vec3(0.0, 0.64, 0.0) * tr.h; tr.R = vec3(0.24 * w, 0.34, 0.24 * w) * tr.h; }
   else { tr.c = vec3(0.0, 0.6, 0.0) * tr.h; tr.R = vec3(0.44 * w, 0.37, 0.44 * w) * tr.h; }
+  // Trunk radius and the height the trunk reaches (a conifer's stops inside its lower crown).
+  tr.rt = tr.h * (tr.type == 1 ? 0.016 : tr.type == 2 ? 0.014 : 0.024);
+  tr.trunk = tr.type == 1 ? 0.42 * tr.h : tr.c.y;
   return tr;
 }
 
@@ -2427,17 +2426,15 @@ vec3 limbEnd(Tree tr, int k) {
 
 // Nearest trunk or limb hit; n is the bark normal, v the height along the trunk (0..1).
 float treeWood(Tree tr, vec3 ro, vec3 rd, out vec3 n, out float v) {
-  float rt = tr.h * (tr.type == 1 ? 0.016 : tr.type == 2 ? 0.014 : 0.024);
-  vec3 top = tr.base + vec3(0.0, tr.type == 1 ? 0.42 * tr.h : tr.c.y, 0.0);
-  vec3 pa = tr.base - vec3(0.0, 0.5, 0.0), pb = top;
-  float t = capsule(ro, rd, pa, pb, rt), best = t > 0.0 ? t : 1e9;
-  float rr = rt;
+  vec3 pa = tr.base - vec3(0.0, 0.5, 0.0), pb = tr.base + vec3(0.0, tr.trunk, 0.0);
+  float t = capsule(ro, rd, pa, pb, tr.rt), best = t > 0.0 ? t : 1e9;
+  float rr = tr.rt;
   if (tr.type != 1) {
     vec3 fork = tr.base + vec3(0.0, tr.c.y - 0.75 * tr.R.y, 0.0);
     for (int k = 0; k < 4; k++) {
       vec3 e = limbEnd(tr, k);
-      float tk = capsule(ro, rd, fork, e, rt * 0.45);
-      if (tk > 0.0 && tk < best) { best = tk; pa = fork; pb = e; rr = rt * 0.45; }
+      float tk = capsule(ro, rd, fork, e, tr.rt * 0.45);
+      if (tk > 0.0 && tk < best) { best = tk; pa = fork; pb = e; rr = tr.rt * 0.45; }
     }
   }
   if (best > 1e8) return -1.0;
@@ -2514,7 +2511,6 @@ vec4 treeShade(Tree tr, vec3 ro, vec3 rd, float t0, float t1, float tw, vec3 n, 
     int N = int(clamp(tr.R.x / (fp * t0 + 1e-4) * 0.35, 18.0, 56.0));
     float dt = (tEnd - t0) / float(N), t = t0 + dt * jitter;
     float sigma = 30.0 / tr.R.x;
-    vec3 sunE = uSunScale * transmittance(OBS, L.y);
     for (int k = 0; k < N; k++) {
       vec3 p = ro + rd * t;
       vec2 cd = crownDensity(tr, p, fp * t);
@@ -2530,8 +2526,8 @@ vec4 treeShade(Tree tr, vec3 ro, vec3 rd, float t0, float t1, float tw, vec3 n, 
         // Clump cores stand proud and catch light; their edges sit in each other's shade.
         float clump = 0.45 + 0.75 * cd.y;
         vec3 alb = foliage(tr, p);
-        vec3 c = alb * (sunE * sun * (wrap * clump + trans * vec3(1.1, 1.25, 0.6)) / PI + amb * sky * (0.6 + 0.4 * cd.y));
-        if (uMoonScale > 0.0) c += alb * uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0)) * max(dot(nn, uMoonDir) * 0.5 + 0.5, 0.0) / PI;
+        vec3 c = alb * (gSunE * sun * (wrap * clump + trans * vec3(1.1, 1.25, 0.6)) / PI + amb * sky * (0.6 + 0.4 * cd.y));
+        if (uMoonScale > 0.0) c += alb * gMoonE * max(dot(nn, uMoonDir) * 0.5 + 0.5, 0.0) / PI;
         float a = 1.0 - exp(-sigma * dens * dt);
         acc += T * a * c;
         T *= 1.0 - a;
@@ -2546,7 +2542,7 @@ vec4 treeShade(Tree tr, vec3 ro, vec3 rd, float t0, float t1, float tw, vec3 n, 
     float marks = tr.type == 2 ? smoothstep(0.55, 0.75, valueNoise(vec2(angle * 3.0, v * tr.h * 4.0) + tr.seed)) : 0.0;
     vec3 bark = tr.type == 2 ? mix(vec3(0.6, 0.58, 0.54), vec3(0.06, 0.05, 0.05), marks) : vec3(0.075, 0.06, 0.05) * (0.8 + 0.4 * valueNoise(vec2(angle * 2.0, v * tr.h * 1.5) + tr.seed));
     float sun = crownSun(tr, p);
-    vec3 c = bark * (uSunScale * transmittance(OBS, L.y) * max(dot(n, L), 0.0) * sun / PI + amb * mix(0.35, 0.8, sun));
+    vec3 c = bark * (gSunE * max(dot(n, L), 0.0) * sun / PI + amb * mix(0.35, 0.8, sun));
     acc += T * c;
     T = 0.0;
   }
@@ -2595,8 +2591,7 @@ float treeShadow(vec3 p) {
     Tree tr = treeAt(i);
     vec2 sp = ellipsoidSpan(p, uSunDir, tr.base + tr.c, tr.R);
     if (sp.y > max(sp.x, 0.0)) s *= mix(1.0, exp(-2.6 * (sp.y - max(sp.x, 0.0)) / tr.R.x), 0.9 * min(uTreeLook.x, 1.0));
-    float rt = tr.h * (tr.type == 1 ? 0.016 : tr.type == 2 ? 0.014 : 0.024);
-    if (capsule(p, uSunDir, tr.base, tr.base + vec3(0.0, tr.type == 1 ? 0.42 * tr.h : tr.c.y, 0.0), rt) > 0.0) s *= 0.15;
+    if (capsule(p, uSunDir, tr.base, tr.base + vec3(0.0, tr.trunk, 0.0), tr.rt) > 0.0) s *= 0.15;
   }
   return s;
 }
@@ -2718,16 +2713,15 @@ vec3 terrainShade(vec3 d, float t, float fp, vec3 amb) {
     n = normalize(n + vec3(-g.x, 0.0, -g.y));
   }
   float sh = terrainShadow(p + n * (0.3 + 2.0 * rate), rate) * gShade;
-  vec3 sunE = uSunScale * transmittance(OBS, uSunDir.y);
-  vec3 col = alb * (sunE * max(dot(n, uSunDir), 0.0) * sh / PI + amb * (0.55 + 0.45 * n.y));
-  if (uMoonScale > 0.0) col += alb * uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0)) * max(dot(n, uMoonDir), 0.0) / PI;
+  vec3 col = alb * (gSunE * max(dot(n, uSunDir), 0.0) * sh / PI + amb * (0.55 + 0.45 * n.y));
+  if (uMoonScale > 0.0) col += alb * gMoonE * max(dot(n, uMoonDir), 0.0) / PI;
   if (type == 6 && uSurfC.y > 0.0) {
     // Sparkle: a few crystal facets per footprint catch the sun or moon.
     float cell = max(rate * 2.0, 0.015);
     uint hh = hash3u(uvec3(uvec2(ivec2(floor(P / cell)) + 1000000), 7u));
     vec3 nf = normalize(n * 1.6 + vec3(rnd(hh) - 0.5, 0.0, rnd(hh) - 0.5));
     vec3 L = uSunDir.y > -0.05 ? uSunDir : uMoonDir;
-    vec3 E2 = uSunDir.y > -0.05 ? sunE : vec3(uMoonScale) * 30.0;
+    vec3 E2 = uSunDir.y > -0.05 ? gSunE : vec3(uMoonScale) * 30.0;
     col += E2 * pow(max(dot(reflect(d, nf), L), 0.0), 600.0) * step(0.75, rnd(hh)) * uSurfC.y * 25.0 * sh;
   }
   return col;
@@ -2739,13 +2733,11 @@ vec3 aurora(vec3 d, float fp, float jitter) {
   if (uAurora.x <= 0.0 || d.y <= 0.0) return vec3(0.0);
   vec2 hd = vec2(sin(uAurora.z), cos(uAurora.z));
   float time = uTime.z, base = mix(1100.0, -150.0, uAurora.w);
-  float b = OBS * d.y;
   vec3 acc = vec3(0.0);
   const int N = 28;
   for (int k = 0; k < N; k++) {
     float hf = (float(k) + jitter) / float(N);
-    float rr = RG + 95.0 + 190.0 * uAurora.y * hf;
-    float t = -b + sqrt(b * b - (OBS * OBS - rr * rr));
+    float t = shellDist(OBS * d.y, RG + 95.0 + 190.0 * uAurora.y * hf);
     vec2 xz = d.xz * t;
     float along = dot(xz, vec2(hd.y, -hd.x)), across = dot(xz, hd);
     float rate = fp * t * 0.001;
@@ -2948,6 +2940,9 @@ vec3 nightSky(vec3 d) {
   return c;
 }
 
+// Diffuse light from the sky in direction d: scattered sun and moon light plus the night glow.
+vec3 skyLight(vec3 d) { return physicalSky(d) + nightSky(d) * uNightScale; }
+
 vec3 sunLight(vec3 d, float fp) {
   float ang = 2.0 * asin(clamp(length(d - uSunDir) * 0.5, 0.0, 1.0));
   float r = uSunDisk.y;
@@ -3005,6 +3000,8 @@ vec3 viewRadiance(vec3 ro, vec3 d, float fp, float fpOut, float jitter, vec3 amb
 // the reflected ray. Each heavy routine has exactly one call site, since GLSL inlines them all.
 vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
   vec3 amb = skyAmbient();
+  gSunE = uSunScale * transmittance(OBS, uSunDir.y);
+  gMoonE = uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0));
   int type = int(uSurf.x);
   bool grassy = type == 3 || type == 4, water = type == 1 || type == 2;
   float E = uSurf.y, H = uGrass.x;
@@ -3703,9 +3700,10 @@ function renderView(scale = 1, quality = 1) {
 // buffer, and the canvas shows the running average.
 function refineView(k) {
   const w = canvas.width, h = canvas.height, m = viewMapping(w), t0 = performance.now();
+  const values = sceneValues(); // before blending is on: it may re-render the atmosphere LUTs
   accTarget = fitTarget(accTarget, w, h, gl.RGBA16F);
   if (k > 0) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
-  drawSky(accTarget.fbo, w, h, m.pix0, m.step, sceneValues(), { frame: k });
+  drawSky(accTarget.fbo, w, h, m.pix0, m.step, values, { frame: k });
   gl.disable(gl.BLEND);
   accN = k + 1;
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
