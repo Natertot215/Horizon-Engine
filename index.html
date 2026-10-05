@@ -794,7 +794,7 @@ const SUN_R = 0.00465;
 
 // Stage bypasses for the ?diag self-test, one uDebug bit each. Only the diagnostic build of the sky
 // shader defines DIAG; everywhere else DBG() is the constant false and the branches compile away.
-const DBG_BITS = ['LUT', 'TRANS', 'NOISE', 'WATER', 'LAND', 'LIGHTS', 'CLOUDS', 'GRADE', 'DITHER', 'FLAT', 'GRAD', 'INJECT'];
+const DBG_BITS = ['LUT', 'TRANS', 'NOISE', 'WATER', 'LAND', 'CELESTIAL', 'CLOUDS', 'GRADE', 'DITHER', 'FLAT', 'GRAD', 'INJECT'];
 
 const GLSL_COMMON = `
 #ifdef DIAG
@@ -3012,7 +3012,7 @@ ${GLSL_LAND}
 
 vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   vec3 col = physicalSky(d);
-  if (d.y > -fp && !DBG(DBG_LIGHTS)) {
+  if (d.y > -fp && !DBG(DBG_CELESTIAL)) {
     // A pixel on the horizon blends into the ground; reflected rays always leave the water upward.
     float above = gMirror ? 1.0 : smoothstep(-fp, fp, d.y);
     vec3 Tv = skyExtinction(d.y);
@@ -5178,7 +5178,7 @@ function diagCases() {
   add(A, 'view', 400, 800, 'view ÷4 400×800', { step: 4 });
   sec(`B ${B.title} · production shader`);
   for (const p of ['thumb', 'view']) add(B, p, 256, 256, `${p} 256`);
-  const all = ['LUT', 'TRANS', 'NOISE', 'WATER', 'LAND', 'LIGHTS', 'CLOUDS'].reduce((m, n) => m | 1 << DBG_BITS.indexOf(n), 0);
+  const all = (1 << DBG_BITS.indexOf('GRADE')) - 1; // every scene stage, LUT to CLOUDS
   for (const s of [A, B]) {
     sec(`${s.name} · diag shader, bypass one stage · f16 256`);
     add(s, 'f16', 256, 256, 'none', { diag: true });
@@ -5196,20 +5196,22 @@ async function runDiag() {
   const ui = el('div', '', document.body);
   ui.id = 'diag';
   el('h2', '', ui, 'Horizon Engine · GPU self-test');
-  const env = diagEnv(), envEl = el('div', 'env', ui);
-  envEl.innerHTML = [
-    `GPU   <b>${env.renderer}</b> · ${env.vendor}`,
+  const env = diagEnv();
+  el('div', 'env', ui, [
+    `GPU   ${env.renderer} · ${env.vendor}`,
     `GL    ${env.version}`,
     `highp float [${env.highFloat}] · int [${env.highInt}]  (rangeMin, rangeMax, precision)`,
     `dpr ${env.dpr} · canvas ${env.canvas.join('×')} · css ${env.css.join('×')} · maxTex ${env.maxTexture}`,
     `PHONE ${PHONE} · FRAME_PX ${FRAME_PX} · LOW ${LOW}`,
-    `ext ${env.extensions.join(' ')}`,
-  ].join('\n');
+  ].join('\n'));
   const bar = el('div', 'row-b', ui), copy = el('button', 'btn', bar, 'Copy results'), status = el('span', '', bar, 'compiling…');
   copy.disabled = true;
   const table = el('table', '', ui);
   table.innerHTML = '<tr><th>case</th><th>8×4%</th><th>4×4%</th><th>8×8%</th><th>edge</th><th>blk</th><th>NaN</th><th>ms</th><th></th></tr>';
-  const gal = el('div', 'gal', ui), json = el('details', '', ui);
+  el('div', 'env', ui, '\n8×4% 4×4% 8×8%: cells standing out from their neighbours · edge: step across 8×4 borders over step inside (≈1 when clean) · blk: all-black 8×4 cells · NaN: NaN/Inf values in the RGBA16F read-back (– none read) · ms: draw + read-back');
+  const gal = el('div', 'gal', ui);
+  el('div', 'env', ui, `\next ${env.extensions.join(' ')}\n\n${env.ua}`);
+  const json = el('details', '', ui);
   el('summary', '', json, 'JSON');
   const pre = el('pre', '', json);
   const report = { env, cases: [] }, t0 = performance.now();
@@ -5225,14 +5227,14 @@ async function runDiag() {
   const cases = diagCases(), runs = cases.filter(c => !c.sec);
   // Warm up both programs (drivers may build the pipeline on first draw) so timings are per render.
   for (const prog of [skyProg, dg.prog]) if (prog) diagRender({ to: 't8', w: 8, h: 8, prog }, sceneValues([8, 8]));
-  let done = 0, passed = 0, caught = 0;
+  let done = 0, passed = 0, caught = 0, shown = 0;
   for (const c of cases) {
     if (c.sec) { el('td', '', el('tr', 'sec', table), c.sec).colSpan = 9; continue; }
     status.textContent = `running ${++done}/${runs.length}…`;
     await nextFrame();
     const row = { scene: c.scene.name, label: c.label, path: c.path, w: c.w, h: c.h, step: c.step || 1, mask: c.mask, diag: !!c.diag };
-    if (c.diag && !dg.prog) continue;
     try {
+      if (c.diag && !dg.prog) throw new Error('no diag shader');
       Object.assign(P, lookParams(c.scene));
       Object.assign(ANIM, { time: 0, micro: 0, cloud: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] });
       const values = sceneValues([c.w * (c.step || 1), c.h * (c.step || 1)]);
@@ -5260,7 +5262,7 @@ async function runDiag() {
       row.result = c.self ? (bad ? 'CAUGHT' : 'MISSED') : bad ? 'FAIL' : 'PASS';
       if (c.self ? bad : !bad) passed++;
       if (c.self && bad) caught++;
-      if (bad || c.self) {
+      if ((bad || c.self) && shown++ < 16) {
         const cell = el('div', '', gal), cv = el('canvas', '', cell);
         el('div', '', cell, `${c.scene.name} ${c.label}${c.mask ? ' m' + c.mask : ''}`);
         cv.width = c.w;
@@ -5281,21 +5283,23 @@ async function runDiag() {
     if (row.error) tr.lastChild.title = row.error;
   }
   report.ms = Math.round(performance.now() - t0);
-  report.summary = `${passed}/${report.cases.length} ok · self-test caught ${caught}/2`;
+  report.summary = `${passed}/${report.cases.length} ok · self-test caught ${caught}/${runs.filter(c => c.self).length}`;
   status.textContent = `${report.summary} · ${(report.ms / 1000).toFixed(1)} s`;
   window.diagReport = report;
   const text = JSON.stringify(report);
   pre.textContent = text;
   copy.disabled = false;
   copy.onclick = async () => {
-    try { await navigator.clipboard.writeText(text); toast('Results copied'); } catch {
+    let ok = true;
+    try { await navigator.clipboard.writeText(text); } catch {
       const r = document.createRange();
       json.open = true;
       r.selectNodeContents(pre);
       getSelection().removeAllRanges();
       getSelection().addRange(r);
-      toast(document.execCommand('copy') ? 'Results copied' : 'Select the JSON below and copy it');
+      ok = document.execCommand('copy');
     }
+    status.textContent = ok ? `copied ${text.length} characters of JSON` : 'copy failed: select the JSON at the bottom';
   };
 }
 

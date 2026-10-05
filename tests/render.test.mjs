@@ -140,15 +140,18 @@ function installHelpers() {
       return { data: b64(raw), shown: b64(shown), glError: gl.getError() };
     },
     // Frames the main view so the canvas shows exactly the whole capture image, as a thumbnail
-    // does, and renders one sample per pixel (pass 0). Restores the framing afterwards.
+    // does, and renders one sample per pixel (pass 0) at the thumbnail's ray-step quality (read
+    // from renderThumb's source, which passes { quality: 0.8 }). Restores the framing afterwards.
     fittedPass0(i, w, h) {
       const savedF = { ...F }, savedRatio = C.ratio;
+      const thumbQuality = +((renderThumb.toString().match(/quality:\s*([\d.]+)/) || [])[1] || 1);
       try {
         canvas.width = w;
         canvas.height = h;
         C.ratio = w / h;
         Object.assign(F, { x: 0, y: 0, w: canvas.clientWidth, h: canvas.clientHeight });
         applyLook(PRESETS[i]);
+        P.cQuality *= thumbQuality;
         while (!refineView(0));
         return { data: b64(readFloat(accTarget.fbo, w, h)), dims: captureDims(), glError: gl.getError() };
       } finally {
@@ -166,7 +169,9 @@ async function openPage(browser, url, contextOptions, log) {
   const context = await browser.newContext({ viewport: { width: 800, height: 500 }, ...contextOptions });
   const page = await context.newPage();
   page.on('pageerror', e => log.push(`pageerror: ${e.message}`));
-  page.on('console', m => { if (m.type() === 'error') log.push(`console.error: ${m.text()}`); });
+  page.on('console', m => {
+    if (m.type() === 'error' && !/favicon\.ico$/.test(m.location()?.url || '')) log.push(`console.error: ${m.text()}`);
+  });
   await page.goto(url, { waitUntil: 'load', timeout: 300000 });
   return { context, page };
 }
@@ -290,10 +295,12 @@ try {
       if (cov.length) problems.push(`${names[i]}: coverage ${cov.join(', ')}`);
       if (r.glError) problems.push(`${names[i]}: gl error 0x${r.glError.toString(16)}`);
     }
-    assert(!problems.length, problems.join('\n'));
+    assert(!problems.length, problems.slice(0, 12).join('\n') + (problems.length > 12 ? `\n... ${problems.length - 12} more` : ''));
   });
 
-  const heavy = FULL ? names : HEAVY.filter(n => names.includes(n));
+  // Named subsets fall back to the first presets if the preset list is ever renamed.
+  const pick = (list, n) => { const l = list.filter(x => names.includes(x)); return l.length ? l : names.slice(0, n); };
+  const heavy = FULL ? names : pick(HEAVY, 3), compare = pick(COMPARE, 6);
   await check(`no NaN/Inf, exact coverage: ${heavy.length} presets, ${REFINE} passes at ${MAIN.join('×')}`, async () => {
     const problems = [];
     for (const name of heavy) {
@@ -328,6 +335,7 @@ try {
   await check('block detector self-check (real renders)', () => {
     const notes = [];
     const t = thumbs[names[0]], m = main[heavy[0]];
+    assert(t && m, 'no renders to corrupt: an earlier check failed before producing them');
     notes.push('thumb: ' + selfCheck(toRGB(t, ...THUMB, 1 / 255), ...THUMB, `thumbnail ${names[0]}`, 99));
     notes.push('main: ' + selfCheck(toRGB(m, ...MAIN, 1 / REFINE), ...MAIN, `main ${heavy[0]}`, 4242));
     return notes.join(' | ');
@@ -351,12 +359,14 @@ try {
       if (a.length) problems.push(`${MAIN.join('×')} ${name}: ${describe(a)}`);
       cells += Math.floor(MAIN[0] / 8) * Math.floor(MAIN[1] / 4);
     }
-    assert(!problems.length, problems.join('\n'));
+    // The 12-pass renders come last in the list but carry the subtlest symptom, so keep them.
+    const shown = problems.length > 12 ? [...problems.slice(0, 6), `... ${problems.length - 9} more images ...`, ...problems.slice(-3)] : problems;
+    assert(!problems.length, `${problems.length} images with anomalies:\n${shown.join('\n')}`);
     return `${Object.keys(thumbs).length + Object.keys(small).length + Object.keys(main).length} images, ${cells} cells per orientation`;
   });
 
   await check('deterministic: same preset twice is bit-identical (accumulation and thumbnail)', async () => {
-    const name = COMPARE.find(n => names.includes(n)) || names[0], other = names[(names.indexOf(name) + 5) % names.length];
+    const name = heavy[0], other = names[(names.indexOf(name) + 5) % names.length];
     const run = () => page.evaluate(([n, w, h]) => __t.accumulate(__t.presetIndex(n), w, h, 3), [name, ...SMALL]);
     const thumb = () => page.evaluate(([n, w, h]) => __t.thumb(__t.presetIndex(n), w, h), [name, ...THUMB]);
     const a = await run(), ta = await thumb();
@@ -370,38 +380,71 @@ try {
     return `${name}, 3 passes at ${SMALL.join('×')} + thumbnail, with ${other} rendered in between`;
   });
 
-  await check(`thumbnail matches a 1-sample main render up to resampling (${COMPARE.length} presets)`, async () => {
+  // Fine detail legitimately differs between a 160-pixel and a 320-pixel render (cloud and grass
+  // detail follow the pixel footprint), so "up to resampling" is checked at low frequency: the
+  // main render is 2×2-downsampled to the thumbnail grid, both are compared in 4×4 blocks, and
+  //   - the block error and the overall colour balance stay within tolerance,
+  //   - no shifted (±1, ±2 px) or mirrored copy of the thumbnail fits better (framing/flip bugs),
+  //   - the difference image has no 8×4- or 4×8-aligned cells (garbage in one path only).
+  await check(`thumbnail matches a 1-sample main render up to resampling (${compare.length} presets)`, async () => {
     const problems = [], notes = [];
-    const [tw, th] = SMALL, [mw, mh] = [SMALL[0] * 2, SMALL[1] * 2];
-    for (const name of COMPARE.filter(n => names.includes(n))) {
+    const [tw, th] = SMALL, [mw, mh] = [SMALL[0] * 2, SMALL[1] * 2], B = 4;
+    const shifted = (raw, dx, dy, flipX, flipY) => {
+      const o = new Float32Array(tw * th * 3);
+      for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+        const sx = Math.min(tw - 1, Math.max(0, (flipX ? tw - 1 - x : x) + dx));
+        const sy = Math.min(th - 1, Math.max(0, (flipY ? th - 1 - y : y) + dy));
+        for (let c = 0; c < 3; c++) o[(y * tw + x) * 3 + c] = raw[(sy * tw + sx) * 4 + c] / 255;
+      }
+      return o;
+    };
+    // Mean over interior 4×4 blocks of the max-over-RGB difference of block means.
+    const blockErr = (a, b) => {
+      let s = 0, n = 0;
+      for (let by = 1; by < th / B - 1; by++) for (let bx = 1; bx < tw / B - 1; bx++) {
+        let m = 0;
+        for (let c = 0; c < 3; c++) {
+          let d = 0;
+          for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) { const i = ((by * B + y) * tw + bx * B + x) * 3 + c; d += a[i] - b[i]; }
+          m = Math.max(m, Math.abs(d) / (B * B));
+        }
+        s += m;
+        n++;
+      }
+      return s / n;
+    };
+    for (const name of compare) {
       const t = await page.evaluate(([n, w, h]) => __t.thumb(__t.presetIndex(n), w, h), [name, tw, th]);
       const m = await page.evaluate(([n, w, h]) => __t.fittedPass0(__t.presetIndex(n), w, h), [name, mw, mh]);
-      const thumb = toRGB(u8(t.data), tw, th, 1 / 255), full = f32(m.data);
-      // 2×2 box-downsample the main render (pixel centres line up) and clamp like RGBA8 does.
+      const raw = u8(t.data), thumb = shifted(raw, 0, 0), full = f32(m.data);
       const down = new Float32Array(tw * th * 3), diffImg = new Float32Array(tw * th * 3);
-      const errs = [];
-      for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
-        let e = 0;
-        for (let c = 0; c < 3; c++) {
-          let s = 0;
-          for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) s += full[((2 * y + dy) * mw + 2 * x + dx) * 4 + c];
-          const v = Math.min(1, Math.max(0, s / 4)), i = (y * tw + x) * 3 + c;
-          down[i] = v;
-          diffImg[i] = 0.5 + thumb[i] - v;
-          e = Math.max(e, Math.abs(thumb[i] - v));
-        }
-        errs.push(e);
+      for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) for (let c = 0; c < 3; c++) {
+        let s = 0;
+        for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) s += full[((2 * y + dy) * mw + 2 * x + dx) * 4 + c];
+        const i = (y * tw + x) * 3 + c;
+        down[i] = Math.min(1, Math.max(0, s / 4)); // clamp like the RGBA8 thumbnail target
+        diffImg[i] = 0.5 + thumb[i] - down[i];
       }
-      errs.sort((a, b) => a - b);
-      const mean = errs.reduce((a, b) => a + b) / errs.length, p99 = errs[Math.floor(errs.length * 0.99)];
-      notes.push(`${name} mean=${mean.toFixed(4)} p99=${p99.toFixed(3)}`);
-      if (mean > 0.02 || p99 > 0.2) problems.push(`${name}: thumbnail differs from main render (mean ${mean.toFixed(4)} > 0.02 or p99 ${p99.toFixed(3)} > 0.2)`);
-      // A garbage cell in the thumbnail is an 8×4-aligned step in the difference image.
+      const e0 = blockErr(thumb, down);
+      let balance = 0;
+      for (let c = 0; c < 3; c++) {
+        let st = 0, sd = 0;
+        for (let i = c; i < thumb.length; i += 3) { st += thumb[i]; sd += down[i]; }
+        balance = Math.max(balance, Math.abs(st - sd) / (tw * th));
+      }
+      const near = Math.min(...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => blockErr(shifted(raw, dx, dy), down)));
+      const far = Math.min(...[[2, 0], [-2, 0], [0, 2], [0, -2]].map(([dx, dy]) => blockErr(shifted(raw, dx, dy), down)),
+        blockErr(shifted(raw, 0, 0, true, false), down), blockErr(shifted(raw, 0, 0, false, true), down));
+      notes.push(`${name} err=${e0.toFixed(4)} balance=${balance.toFixed(4)} vs±1px=${(e0 / near).toFixed(2)} vs±2px/flip=${(e0 / far).toFixed(2)}`);
+      if (e0 > 0.04) problems.push(`${name}: 4×4-block error ${e0.toFixed(4)} > 0.04`);
+      if (balance > 0.025) problems.push(`${name}: mean colour differs by ${balance.toFixed(4)} > 0.025`);
+      if (e0 > near) problems.push(`${name}: a 1-pixel-shifted thumbnail matches the main render better (${near.toFixed(4)} < ${e0.toFixed(4)})`);
+      if (e0 > 0.95 * far) problems.push(`${name}: a 2-pixel-shifted or mirrored thumbnail matches nearly as well (${far.toFixed(4)} vs ${e0.toFixed(4)})`);
       const a = anomalies(diffImg, tw, th);
       if (a.length) problems.push(`${name}: block-aligned differences: ${describe(a)}`);
     }
-    assert(!problems.length, problems.join('\n') + '\n' + notes.join(', '));
-    return notes.join(', ');
+    assert(!problems.length, problems.join('\n') + '\n' + notes.join('\n'));
+    return notes.join('\n      ');
   });
 
   await check(`phone budget: banded refinement covers every pixel once and matches an unbanded render bit-for-bit (${PHONE_VIEW.join('×')})`, async () => {
@@ -411,7 +454,7 @@ try {
       await phone.evaluate(installHelpers);
       const st = await phone.evaluate(() => __t.state());
       assert(st.phone, 'pointer: coarse did not match in the mobile context, so PHONE is false and banding is not exercised');
-      const name = HEAVY.find(n => names.includes(n)) || names[0], [w, h] = PHONE_VIEW, n = 2;
+      const name = heavy[0], [w, h] = PHONE_VIEW, n = 2;
       const r = await phone.evaluate(([nm, w, h, n]) => __t.accumulate(__t.presetIndex(nm), w, h, n), [name, w, h, n]);
       assert(r.calls.every(c => c > 1), `expected several bands per pass with FRAME_PX=${st.framePx}, got ${r.calls.join(', ')} refineView calls`);
       const f = f32(r.data);
