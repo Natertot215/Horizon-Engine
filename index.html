@@ -298,8 +298,8 @@ const DEFAULTS = {
   nightBright: 1, nightZenith: '#0a0e2a', nightHorizon: '#2b2550', nightCurve: 0.35, nightVibrance: 0,
   lpStrength: 0.12, lpColor: '#c98a6a', lpHeading: 20, lpFocus: 0.5, lpHeight: 0.12,
   airglow: 0.06, airglowColor: '#4f8a5e',
-  surface: 0, eyeHeight: 2, surfScale: 1, surfColorA: '#1b1c21', surfColorB: '#121317', surfWaves: 0.5, surfReflect: 0,
-  surfWind: 60, surfSparkle: 0.5, surfMotion: 1, surfRows: 20,
+  surface: 1, eyeHeight: 2, surfScale: 1, surfColorA: '#0a1820', surfColorB: '#1f5a4e', surfWaves: 0.35, surfReflect: 1,
+  surfWind: 60, surfSparkle: 0.5, surfMotion: 1, surfRows: 20, surfFoam: 0.5,
   land: 0, landHeight: 3, landRough: 0.5, landLayers: 3, landDepth: 1, landHeading: 0, landSeed: 1,
   landColor: '#2a2d36', cityLights: 0.5, cityColor: '#ffbe76',
   peak: 0, peakHeading: 200, peakWidth: 14, peakSnow: 0.35,
@@ -341,9 +341,9 @@ const PROJECTIONS = [
 const TONES = ['Soft', 'Natural', 'Vivid', 'Filmic'];
 
 const SURFACES = [
+  ['Water', 1, { surfColorA: '#0a1820', surfColorB: '#1f5a4e', surfReflect: 1, surfWaves: 0.35, surfScale: 1, surfMotion: 1 }],
+  ['Ocean', 1, { surfColorA: '#061c2a', surfColorB: '#2b8f7c', surfReflect: 1, surfWaves: 1.6, surfScale: 2.6, surfMotion: 1.6 }],
   ['Plain', 0, { surfColorA: '#1b1c21', surfColorB: '#121317', surfReflect: 0, surfWaves: 0.5, surfScale: 1 }],
-  ['Lake', 1, { surfColorA: '#0a1820', surfColorB: '#0a1820', surfReflect: 1, surfWaves: 0.35, surfScale: 1, surfMotion: 1 }],
-  ['Ocean', 1, { surfColorA: '#081a26', surfColorB: '#081a26', surfReflect: 1, surfWaves: 1.6, surfScale: 2.6, surfMotion: 1.6 }],
   ['Salt Flat', 2, { surfColorA: '#ebe8e3', surfColorB: '#b6aea3', surfReflect: 0.85, surfWaves: 0.12, surfScale: 1 }],
   ['Grass', 3, { surfColorA: '#3a5a22', surfColorB: '#6e7d2f', surfReflect: 0, surfWaves: 0.6, surfScale: 1 }],
   ['Wheat', 4, { surfColorA: '#cfa557', surfColorB: '#94702f', surfReflect: 0, surfWaves: 0.8, surfScale: 1 }],
@@ -397,7 +397,7 @@ function whiteBalance() {
 
 // ─── Looks ──────────────────────────────────────────────────────────────────
 
-const LAKE = { surface: 1, surfColorA: '#0a1820', surfColorB: '#0a1820', surfReflect: 1, surfWaves: 0.3 };
+const LAKE = { surface: 1, surfWaves: 0.3 };
 
 const PRESETS = [
   { name: 'Fuji Twilight', p: {
@@ -499,7 +499,10 @@ const PRESETS = [
   } },
 ];
 
-const looks = (store('horizon-looks') || []).filter(l => l && l.name && l.p);
+// Looks saved before v2 stored only values that differed from the defaults of the time.
+const LEGACY = { surface: 0, surfColorA: '#1b1c21', surfColorB: '#121317', surfReflect: 0, surfWaves: 0.5 };
+const looks = (store('horizon-looks') || []).filter(l => l && l.name && l.p)
+  .map(l => l.v ? l : { name: l.name, v: 2, p: { ...LEGACY, ...l.p } });
 
 function lookParams(look) {
   return { ...DEFAULTS, ...look.p };
@@ -518,9 +521,7 @@ function applyLook(look) {
 }
 
 function saveLook(name) {
-  const p = {};
-  for (const [k, v] of Object.entries(P)) if (v !== DEFAULTS[k]) p[k] = v;
-  looks.push({ name, p });
+  looks.push({ name, v: 2, p: { ...P } });
   store('horizon-looks', looks);
   buildLookStrip();
 }
@@ -917,6 +918,7 @@ vec3 faceDir(int face, vec2 uv) {
 }
 
 float twinkleAmt = 0.0;
+bool gMirror = false; // tracing a reflection: sun and moon disks come from glint() instead
 
 float starSigma(float fpOut) { return uStars.w * 4e-4 * length(uImg) * fpOut; }
 
@@ -1090,7 +1092,7 @@ vec4 moonDisk(vec3 d, float fp) {
   glow += uMoonHalo * illum * 0.05 * exp(-hr * hr) * mix(vec3(1.0, 0.55, 0.35), vec3(0.75, 0.85, 1.0), smoothstep(-1.0, 1.5, hr));
   glow *= uMoon.z;
   float cover = clamp((r - ang) / max(fp, 1e-7) + 0.5, 0.0, 1.0);
-  if (cover <= 0.0) return vec4(glow, 0.0);
+  if (cover <= 0.0 || gMirror) return vec4(glow, 0.0);
   vec3 mr = normalize(cross(vec3(0.0, 1.0, 0.0), uMoonDir));
   vec3 mu = cross(uMoonDir, mr);
   vec2 xy = vec2(dot(dv, mr), dot(dv, mu)) / r;
@@ -1399,13 +1401,141 @@ vec3 shadeLand(int L, vec3 d, float az, float el, Ridge rg, vec3 amb, float fp) 
   return applyFog(c, d, km * 1000.0, amb);
 }
 
-// ── Ground surfaces ──
-
 vec2 noiseGrad(vec3 c, float rate, int ch) {
   const float e = 0.01;
   vec4 a = nz(c, rate), bx = nz(c + vec3(e, 0.0, 0.0), rate), by = nz(c + vec3(0.0, e, 0.0), rate);
   return ch == 0 ? vec2(bx.r - a.r, by.r - a.r) / e : vec2(bx.a - a.a, by.a - a.a) / e;
 }
+
+// ── Water ──
+
+const int WAVES = 32;
+
+float smithG1(float c, float a2) {
+  float x = c / sqrt(a2 * max(1.0 - c * c, 1e-6));
+  return x < 1.6 ? (3.535 * x + 2.181 * x * x) / (1.0 + 2.276 * x + 2.577 * x * x) : 1.0;
+}
+
+// Beckmann microfacet reflectance toward light l; multiply by the light's irradiance.
+float glint(vec3 n, vec3 v, vec3 l, float a2) {
+  float nl = dot(n, l), nv = max(dot(n, v), 1e-3);
+  if (nl <= 0.0) return 0.0;
+  vec3 h = normalize(v + l);
+  float nh2 = max(dot(n, h), 1e-3);
+  nh2 *= nh2;
+  float D = exp((nh2 - 1.0) / (nh2 * a2)) / (PI * a2 * nh2 * nh2);
+  float F = 0.02 + 0.98 * pow(1.0 - max(dot(v, h), 0.0), 5.0);
+  return F * D * smithG1(nv, a2) * smithG1(min(nl, 1.0), a2) / (4.0 * nv);
+}
+
+// Sum of directional deep-water waves. Waves smaller than the pixel footprint drop out of the
+// normal and move into the unresolved slope variance (x), which widens the sun's glitter path.
+// fpD is the pixel footprint across the view (m); along the view it stretches by 1 / sin(grazing).
+vec2 waves(vec2 P, vec2 vh, float fpD, float graze, out vec3 n) {
+  float t = uTime.y * uSurfC.z, S = uSurf.z, stretch2 = 1.0 / (graze * graze);
+  float rate = fpD / graze;
+  // Wave groups: slowly drifting amplitude patches stop the components reading as a lattice.
+  vec4 grp = nz(vec3(P / (90.0 * S) * 0.1, 0.19 + t * 0.0007), rate / (90.0 * S) * 0.1) * 1.6 - 0.3;
+  vec3 g = vec3(0.0);
+  float h = 0.0, hs = 1e-6, mss = 0.0;
+  for (int i = 0; i < WAVES; i++) {
+    vec4 w = uWave[i];
+    float k = length(w.xy);
+    float c = dot(w.xy, vh) / k;
+    float vis = smoothstep(1.5, 4.0, TAU / (k * fpD * sqrt(1.0 + c * c * (stretch2 - 1.0))));
+    float a = w.w * grp[i & 3];
+    float s = a * k;
+    float th = dot(w.xy, P) - sqrt(9.81 * k * (1.0 + k * k * 7.4e-6)) * t + w.z;
+    float sn = sin(th);
+    g += vec3(w.xy / k * cos(th), sn * uWaveFx.x) * (s * vis);
+    h += a * sn * vis;
+    hs += w.w;
+    mss += 0.5 * s * s * (1.0 - vis * vis);
+  }
+  // Wind ripples: two octaves of stretched, animated noise carry the finest slopes.
+  vec2 wd = vec2(sin(uSurfC.x), cos(uSurfC.x));
+  vec2 q = vec2(dot(P, wd), dot(P, vec2(wd.y, -wd.x)) * 0.55);
+  float lr = 0.6 * S, sr = sqrt(uWaveFx.z);
+  for (int o = 0; o < 2; o++) {
+    float vis = smoothstep(1.5, 4.0, lr / rate);
+    if (vis > 0.0) {
+      vec2 gr = noiseGrad(vec3((q - vec2(t * 0.35 * sqrt(lr), 0.0)) / lr * 0.25, 0.53 + float(o) * 0.31 + t * 0.03 / sqrt(lr)), rate / lr * 0.25, 0) * 0.25 * sr * vis;
+      g.xy += gr.x * wd + gr.y * vec2(wd.y, -wd.x);
+    }
+    mss += uWaveFx.z * (1.0 - vis * vis);
+    lr *= 0.3;
+  }
+  n = normalize(vec3(-g.x, 1.0 - g.z, -g.y));
+  return vec2(mss, h / hs);
+}
+
+vec2 worley2(vec2 x) {
+  vec2 i = floor(x), f = fract(x);
+  float f1 = 8.0, f2 = 8.0;
+  for (int y = -1; y <= 1; y++)
+    for (int k = -1; k <= 1; k++) {
+      vec2 o = vec2(float(k), float(y));
+      uint h = hash3u(uvec3(uvec2(ivec2(i + o) + 100000), 61u));
+      vec2 r = o + 0.15 + 0.7 * vec2(rnd(h), rnd(h)) - f;
+      float dd = dot(r, r);
+      if (dd < f1) { f2 = f1; f1 = dd; } else if (dd < f2) f2 = dd;
+    }
+  return sqrt(vec2(f1, f2));
+}
+
+vec3 viewRadiance(vec3 d, float fp, float fpOut, float jitter, vec3 amb);
+
+vec3 shadeWater(vec3 d, float Dm, float rate, float fp, float fpOut, float jitter, vec3 amb) {
+  vec2 P = d.xz * Dm;
+  vec3 n;
+  vec2 w = waves(P, normalize(d.xz + 1e-6), fp * Dm, max(-d.y, 0.003), n);
+  vec3 v = -d;
+  float F = (0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0)) * uSurfB.a;
+  vec3 r = reflect(d, n);
+  gMirror = true;
+  vec3 sky = viewRadiance(normalize(vec3(r.x, max(r.y, 5e-4), r.z)), fp, fpOut, jitter, amb);
+  gMirror = false;
+  vec3 sunE = uSunScale * transmittance(OBS, uSunDir.y);
+  vec3 spec = sunE * glint(n, v, uSunDir, w.x + 2e-5 + uSunDisk.y * uSunDisk.y);
+  if (uMoon.x > 0.0) {
+    // The disk is drawn far below its true radiance so its face stays visible; the glitter path
+    // uses a brighter moon so it reads the way it does in a night photograph.
+    vec3 Tm = mix(vec3(1.0), transmittance(OBS, max(uMoonDir.y, 0.0)) / transmittance(OBS, 1.0), uStarLook.w);
+    spec += Tm * uMoon.z * 250.0 * PI * uMoon.y * uMoon.y * (0.5 + 0.5 * uMoonLight.z) * glint(n, v, uMoonDir, w.x + 2e-5 + uMoon.y * uMoon.y);
+  }
+  vec3 E = directLight(vec3(0.0, 1.0, 0.0)) + amb;
+  vec3 body;
+  if (int(uSurf.x) == 2) {
+    // Salt crust under a thin film: polygonal ridges break through the mirror.
+    float S = uSurf.z;
+    vec2 c = worley2(P / (1.6 * S));
+    float ridge = 1.0 - smoothstep(0.0, 0.06 + 0.5 * rate / (1.6 * S), c.y - c.x);
+    float far = smoothstep(0.02, 0.3, rate / (1.6 * S));
+    ridge = mix(ridge, 0.12, far);
+    float tone = nz(vec3(P / (40.0 * S) * 0.1, 0.33), rate / (40.0 * S) * 0.1).r;
+    body = mix(uSurfA.rgb, uSurfB.rgb, 0.35 * tone) * (0.9 + 0.25 * ridge) * E;
+    F *= 1.0 - 0.8 * ridge * (1.0 - far);
+    spec *= 1.0 - 0.8 * ridge * (1.0 - far);
+  } else {
+    // Light scattered back out of the water column; sunlit crests glow when facing the sun.
+    vec2 dh = normalize(d.xz + 1e-5), sh = normalize(uSunDir.xz + 1e-5);
+    float fwd = pow(max(dot(dh, sh), 0.0), 4.0) * smoothstep(-0.1, 0.9, w.y);
+    body = uSurfA.rgb * E + uSurfB.rgb * sunE * fwd * 0.02;
+  }
+  vec3 col = body * (1.0 - F) + sky * F + spec * uSurfB.a;
+  if (uWaveFx.y > 0.0) {
+    vec2 wd = vec2(sin(uSurfC.x), cos(uSurfC.x));
+    vec2 q = vec2(dot(P, wd), dot(P, vec2(wd.y, -wd.x))) / uSurf.z;
+    float t = uTime.y * uSurfC.z;
+    float streak = nz(vec3(q * vec2(0.012, 0.06) + vec2(-t * 0.004, 0.0), 0.37), rate * 0.06 / uSurf.z).r;
+    float speck = nz(vec3(q * 0.35, 0.71 + t * 0.002), rate * 0.35 / uSurf.z).g;
+    float foam = smoothstep(0.62, 0.95, w.y + (streak - 0.5) * 0.7 + (speck - 0.5) * 0.3) * uWaveFx.y;
+    col = mix(col, vec3(0.82) * E, clamp(foam, 0.0, 1.0));
+  }
+  return col;
+}
+
+// ── Ground surfaces ──
 
 vec4 surfaceAt(vec2 P, float rate, vec3 d, float Dm, out vec3 n) {
   int type = int(uSurf.x);
@@ -1415,25 +1545,7 @@ vec4 surfaceAt(vec2 P, float rate, vec3 d, float Dm, out vec3 n) {
   n = vec3(0.0, 1.0, 0.0);
   vec3 albedo = A;
   float refl = 0.0;
-  if (type == 1 || type == 2) {
-    vec2 g = vec2(0.0);
-    float amp = uSurfA.a * (type == 1 ? 1.0 : 0.12);
-    float sc = 7.0 * S;
-    for (int o = 0; o < 4; o++) {
-      float fade = 1.0 - smoothstep(0.15, 0.6, rate / sc);
-      if (fade <= 0.0) break;
-      vec2 q = (P + wdir * t * uSurfC.z * (1.6 - 0.25 * float(o))) / sc * 0.12;
-      g += noiseGrad(vec3(q, t * 0.004 * uSurfC.z + float(o) * 0.29), rate / sc * 0.12, 0) * fade * (1.0 - 0.15 * float(o));
-      sc *= 0.38;
-    }
-    n = normalize(vec3(-g.x * amp * 0.006, 1.0, -g.y * amp * 0.006));
-    refl = uSurfB.a;
-    if (type == 2) {
-      float crack = pow(1.0 - abs(nz(vec3(P / (0.9 * S) * 0.1, 0.71), rate / (0.9 * S) * 0.1).a * 2.0 - 1.0), 16.0);
-      crack *= 1.0 - smoothstep(0.02, 0.12, rate / (0.9 * S));
-      albedo = mix(A, B, crack * 0.8 + 0.2 * nz(vec3(P / (60.0 * S) * 0.1, 0.33), rate / (60.0 * S) * 0.1).r);
-    }
-  } else if (type == 3 || type == 4) {
+  if (type == 3 || type == 4) {
     float pat = nz(vec3(P / (45.0 * S) * 0.1, 0.13), rate / (45.0 * S) * 0.1).r;
     float fine = mix(nz(vec3(P / (0.9 * S) * 0.1, 0.29), rate / (0.9 * S) * 0.1).r, 0.5, smoothstep(0.1, 0.6, rate / (0.9 * S)));
     vec2 gq = (P - wdir * t * 4.0 * uSurfC.z) / (30.0 * S) * 0.1;
@@ -1536,6 +1648,8 @@ const SCENE_UNIFORMS = [
   ['uSurfA', 'vec4', () => [...hexLinear(P.surfColorA), P.surfWaves]],
   ['uSurfB', 'vec4', () => [...hexLinear(P.surfColorB), P.surfReflect]],
   ['uSurfC', 'vec4', () => [P.surfWind * DEG, P.surfSparkle, P.surfMotion, P.surfRows * DEG]],
+  ['uWave', 'vec4', () => D.waves, 32],
+  ['uWaveFx', 'vec3', () => D.waveFx],
   ['uLand', 'vec4', () => [P.land, P.landHeight, P.landRough, P.landLayers]],
   ['uLandB', 'vec4', () => [P.landDepth, P.landHeading * DEG, P.landSeed, P.cityLights]],
   ['uLandColor', 'vec3', () => hexLinear(P.landColor)],
@@ -1682,8 +1796,11 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
     float above = smoothstep(-fp, fp, d.y);
     vec3 Tv = mix(vec3(1.0), transmittance(OBS, max(d.y, 0.0)) / transmittance(OBS, 1.0), uStarLook.w);
     vec4 moon = uMoon.x > 0.0 ? moonDisk(d, fp) : vec4(0.0);
-    vec3 night = nightSky(d) + aurora(d, fp, jitter) + (nightLayers(d, fp, fpOut) * (1.0 - moon.a) + meteors(d, fp, fpOut)) * Tv;
-    col += (night * uNightScale + moon.rgb * Tv + sunLight(d, fp)) * above;
+    vec3 night = nightSky(d) + aurora(d, fp, jitter);
+    // Stars and deep-sky layers are invisible against daylight; skip their cost.
+    if (uNightScale > 2e-3) night += (nightLayers(d, fp, fpOut) * (1.0 - moon.a) + meteors(d, fp, fpOut)) * Tv;
+    col += (night * uNightScale + moon.rgb * Tv) * above;
+    if (!gMirror) col += sunLight(d, fp) * above;
   }
   if (uCloudN > 0) {
     vec4 c = clouds(d, fp, jitter, amb);
@@ -1716,24 +1833,18 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
   vec3 amb = skyAmbient();
   float Dm = d.y < 0.0 ? uSurf.y / -d.y : 1e9;
   bool ground = d.y < 0.0 && (uLand.x < 0.5 || Dm < LAND_DIST[0] * uLandB.x * 1000.0);
-  vec3 dir = d, surf = vec3(0.0), col = vec3(0.0);
-  float reflW = 0.0;
-  if (ground) {
+  if (!ground) return viewRadiance(d, fp, fpOut, jitter, amb);
+  float rate = fp * Dm * inversesqrt(max(-d.y, 0.02));
+  int type = int(uSurf.x);
+  vec3 col;
+  if (type == 1 || type == 2) col = shadeWater(d, Dm, rate, fp, fpOut, jitter, amb);
+  else {
     vec3 n;
-    vec4 s = surfaceAt(d.xz * Dm, fp * Dm * inversesqrt(max(-d.y, 0.02)), d, Dm, n);
-    float F = s.a * (0.02 + 0.98 * pow(1.0 - max(dot(-d, n), 0.0), 5.0));
-    surf = s.rgb * (directLight(n) + amb) * (1.0 - F);
-    dir = reflect(d, n);
-    dir = normalize(vec3(dir.x, max(dir.y, 0.0005), dir.z));
-    reflW = F;
+    vec4 s = surfaceAt(d.xz * Dm, rate, d, Dm, n);
+    col = s.rgb * (directLight(n) + amb);
   }
-  if (!ground || reflW > 0.0) col = viewRadiance(dir, fp, fpOut, jitter, amb);
-  if (ground) {
-    col = surf + col * reflW;
-    col = mix(horizonSky(d), col, hazeT(Dm * 0.001));
-    col = applyFog(col, d, Dm, amb);
-  }
-  return col;
+  col = mix(horizonSky(d), col, hazeT(Dm * 0.001));
+  return applyFog(col, d, Dm, amb);
 }
 
 // ── Tone & Grade ──
@@ -2061,8 +2172,29 @@ function meteorField() {
   return { A, B, prog };
 }
 
+// Directional wave components (kx, kz, phase, amplitude) for the water shader. "Waves & Wind"
+// sets a wind speed, which fixes the total slope variance (Cox–Munk) and the longest swell.
+function waveField() {
+  const R = rng(7331), U = P.surfWaves * 4, wind = P.surfWind * DEG;
+  const lmax = P.surfScale * (1.5 + 0.85 * U * U), lmin = 0.02 * Math.sqrt(P.surfScale);
+  const mss = 0.0006 + 0.0048 * U;
+  const out = [], weights = [];
+  for (let i = 0; i < 32; i++) {
+    const f = (i + R()) / 32;
+    const k = TAU / (lmax * Math.pow(lmin / lmax, f));
+    const th = wind + (R() + R() + R() - 1.5) * (0.5 + 1.4 * f);
+    const s = 0.5 + R();
+    weights.push(s * s);
+    out.push(Math.sin(th) * k, Math.cos(th) * k, R() * TAU, k);
+  }
+  const total = weights.reduce((a, b) => a + b);
+  for (let i = 0; i < 32; i++) out[i * 4 + 3] = Math.sqrt(2 * 0.7 * mss * weights[i] / total) / out[i * 4 + 3];
+  return { waves: out, fx: [clamp(P.surfWaves / 2.5, 0, 0.8), P.surface === 1 ? P.surfFoam * clamp((P.surfWaves - 0.8) / 1.4, 0, 1) : 0, 0.15 * mss] };
+}
+
 function derive(img) {
   D.img = img || captureDims();
+  ({ waves: D.waves, fx: D.waveFx } = waveField());
   D.basis = cameraBasis();
   D.sunDir = skyVector(P.sunElev, P.sunHeading);
   D.sunAz = [Math.sin(P.sunHeading * DEG), Math.cos(P.sunHeading * DEG)];
@@ -2736,6 +2868,7 @@ const TABS = [
       { key: 'surfScale', label: 'Texture Scale', min: 0.2, max: 5, step: 0.01, fmt: v => v.toFixed(2) + '×' },
       { key: 'surfWaves', label: 'Waves & Wind', min: 0, max: 3, step: 0.01, fmt: fmt(2) },
       { key: 'surfReflect', label: 'Reflection', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.surface === 1 || P.surface === 2 },
+      { key: 'surfFoam', label: 'Whitecaps', min: 0, max: 1.5, step: 0.01, fmt: fmt(2), when: () => P.surface === 1 },
       { key: 'surfWind', label: 'Wind Direction', min: 0, max: 360, step: 1, fmt: deg },
       { key: 'surfRows', label: 'Row Angle', min: 0, max: 180, step: 0.5, fmt: deg, when: () => P.surface === 4 },
       { key: 'surfSparkle', label: 'Sparkle', min: 0, max: 2, step: 0.01, fmt: fmt(2), when: () => P.surface === 6 },
