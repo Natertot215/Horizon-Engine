@@ -380,6 +380,26 @@ try {
     return `${name}, 3 passes at ${SMALL.join('×')} + thumbnail, with ${other} rendered in between`;
   });
 
+  // Each scene runs a sky shader trimmed to the features it uses; the code left out is skipped at
+  // run time anyway, so the trimmed build must match the full one bit for bit.
+  await check(`trimmed shaders: every preset matches the full shader bit-for-bit (${names.length} presets)`, async () => {
+    const bad = [];
+    for (let i = 0; i < names.length; i++) {
+      const run = full => page.evaluate(([i, w, h, full]) => {
+        const own = sceneFeatures;
+        if (full) sceneFeatures = () => ALL_FEATURES;
+        try { return __t.accumulate(i, w, h, 1); } finally { sceneFeatures = own; }
+      }, [i, ...SMALL, full]);
+      const a = await run(false), b = await run(true);
+      const fa = new Uint32Array(f32(a.data).slice().buffer), fb = new Uint32Array(f32(b.data).slice().buffer);
+      let diff = 0;
+      for (let j = 0; j < fa.length; j++) diff += fa[j] !== fb[j];
+      if (diff) bad.push(`${names[i]}: ${diff} values`);
+    }
+    assert(!bad.length, `trimmed and full shaders differ: ${bad.join(', ')}`);
+    return `1 pass at ${SMALL.join('×')}, ${await page.evaluate(() => skyPrograms.size)} programs compiled`;
+  });
+
   // Fine detail legitimately differs between a 160-pixel and a 320-pixel render (cloud and grass
   // detail follow the pixel footprint), so "up to resampling" is checked at low frequency: the
   // main render is 2×2-downsampled to the thumbnail grid, both are compared in 4×4 blocks, and

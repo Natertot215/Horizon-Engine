@@ -2922,8 +2922,87 @@ void main() {
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-const SKY_FS = (diag = false, fast = false) => `#version 300 es
-${diag ? '#define DIAG\n' : ''}${fast ? '#define FASTMATH\n' : ''}precision highp float;
+// Features the sky shader can carry. Each scene compiles only those it uses: the trimmed shader is a
+// fraction of the full one, and iPhone GPUs corrupted whole 8×4 pixel groups running the full one.
+const FEATURES = ['MOON', 'BODIES', 'AURORA', 'NIGHT', 'CLOUDS', 'LAND', 'CITY', 'TERRAIN', 'GRASS', 'TREES', 'WATER'];
+const ALL_FEATURES = Object.fromEntries(FEATURES.map(k => [k, true]));
+
+const GLSL_FEATURE_CALLS = `
+#if HAS_MOON
+#define MOON_DISK(d, fp) moonDisk(d, fp)
+#else
+#define MOON_DISK(d, fp) vec4(0.0)
+#endif
+#if HAS_BODIES
+#define BODIES(d, fp) bodies(d, fp)
+#else
+#define BODIES(d, fp) vec4(0.0)
+#endif
+#if HAS_AURORA
+#define AURORA(d, fp, j) aurora(d, fp, j)
+#else
+#define AURORA(d, fp, j) vec3(0.0)
+#endif
+#if HAS_NIGHT
+#define NIGHT_LAYERS(d, fp, fo) nightLayers(d, fp, fo)
+#define METEORS(d, fp, fo) meteors(d, fp, fo)
+#else
+#define NIGHT_LAYERS(d, fp, fo) vec3(0.0)
+#define METEORS(d, fp, fo) vec3(0.0)
+#endif
+#if HAS_CLOUDS
+#define CLOUDS(d, fp, j, amb) clouds(d, fp, j, amb)
+#else
+#define CLOUDS(d, fp, j, amb) vec4(0.0, 0.0, 0.0, 1.0)
+#endif
+#if HAS_LAND
+#define LAND_TRACE(ro, d, fp) landTrace(ro, d, fp)
+#define LAND_SHADE(ro, d, t, fp, amb) landShade(ro, d, t, fp, amb)
+#else
+#define LAND_TRACE(ro, d, fp) -1.0
+#define LAND_SHADE(ro, d, t, fp, amb) vec3(0.0)
+#endif
+#if HAS_CITY
+#define CITY_TRACE(ro, d, fp, n) cityTrace(ro, d, fp, n)
+#define CITY_SHADE(ro, d, t, n, fp, amb) cityShade(ro, d, t, n, fp, amb)
+#else
+#define CITY_TRACE(ro, d, fp, n) -1.0
+#define CITY_SHADE(ro, d, t, n, fp, amb) vec3(0.0)
+#endif
+#if HAS_TERRAIN
+#define TERRAIN_TRACE(d, fp) terrainTrace(d, fp)
+#define TERRAIN_SHADE(d, Dm, fp, amb) terrainShade(d, Dm, fp, amb)
+#else
+#define TERRAIN_TRACE(d, fp) -1.0
+#define TERRAIN_SHADE(d, Dm, fp, amb) vec3(0.0)
+#endif
+#if HAS_GRASS
+#define GRASS_SETUP() grassSetup()
+#define GRASS_TRACE(d, t0, t1, tr, fp, amb, te) grassTrace(d, t0, t1, tr, fp, amb, te)
+#define GRASS_GROUND(p, r, amb) grassGround(p, r, amb)
+#define GRASS_CANOPY(dd, p, r, soil, amb) grassCanopy(dd, p, r, soil, amb)
+#else
+#define GRASS_SETUP()
+#define GRASS_TRACE(d, t0, t1, tr, fp, amb, te) vec4(0.0)
+#define GRASS_GROUND(p, r, amb) vec3(0.0)
+#define GRASS_CANOPY(dd, p, r, soil, amb) vec3(0.0)
+#endif
+#if HAS_TREES
+#define TREE_SHADOW(p) treeShadow(p)
+#define TREES_TRACE(ro, rd, tm, fp, j, amb, th) treesTrace(ro, rd, tm, fp, j, amb, th)
+#else
+#define TREE_SHADOW(p) 1.0
+#define TREES_TRACE(ro, rd, tm, fp, j, amb, th) vec4(0.0)
+#endif
+#if HAS_WATER
+#define WATER_SURFACE(d, Dm, rate, fp, amb, F, r, under) waterSurface(d, Dm, rate, fp, amb, F, r, under)
+#else
+#define WATER_SURFACE(d, Dm, rate, fp, amb, F, r, under) vec3(0.0)
+#endif
+`;
+
+const SKY_FS = (diag = false, fast = false, feats = ALL_FEATURES) => `#version 300 es
+${diag ? '#define DIAG\n' : ''}${fast ? '#define FASTMATH\n' : ''}${FEATURES.map(k => `#define HAS_${k} ${feats[k] ? 1 : 0}\n#define F_${k} ${feats[k] ? 'true' : 'false'}\n`).join('')}precision highp float;
 precision highp int;
 ${SCENE_UNIFORMS.map(([n, t, , len]) => `uniform ${t} ${n}${len ? `[${len}]` : ''};`).join('\n')}
 uniform sampler2D uTrans, uSkySun, uSkyMoon;
@@ -3009,6 +3088,7 @@ vec3 sunLight(vec3 d, float fp) {
 
 ${GLSL_CLOUDS}
 ${GLSL_LAND}
+${GLSL_FEATURE_CALLS}
 
 vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   vec3 col = physicalSky(d);
@@ -3016,16 +3096,16 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
     // A pixel on the horizon blends into the ground; reflected rays always leave the water upward.
     float above = gMirror ? 1.0 : smoothstep(-fp, fp, d.y);
     vec3 Tv = skyExtinction(d.y);
-    vec4 moon = uMoon.x > 0.0 ? moonDisk(d, fp) : vec4(0.0);
-    vec4 body = uBodyN > 0 ? bodies(d, fp) : vec4(0.0);
-    vec3 night = nightSky(d) + aurora(d, fp, jitter);
+    vec4 moon = F_MOON && uMoon.x > 0.0 ? MOON_DISK(d, fp) : vec4(0.0);
+    vec4 body = F_BODIES && uBodyN > 0 ? BODIES(d, fp) : vec4(0.0);
+    vec3 night = nightSky(d) + AURORA(d, fp, jitter);
     // Stars and deep-sky layers are invisible against daylight; skip their cost.
-    if (uNightScale > 2e-3) night += (nightLayers(d, fp, fpOut) * (1.0 - moon.a) * (1.0 - body.a) + meteors(d, fp, fpOut)) * Tv;
+    if (F_NIGHT && uNightScale > 2e-3) night += (NIGHT_LAYERS(d, fp, fpOut) * (1.0 - moon.a) * (1.0 - body.a) + METEORS(d, fp, fpOut)) * Tv;
     col += (night * uNightScale + (moon.rgb + body.rgb * (1.0 - moon.a)) * Tv) * above;
     if (!gMirror) col += sunLight(d, fp) * above;
   }
-  if (uCloudN > 0 && !DBG(DBG_CLOUDS)) {
-    vec4 c = clouds(d, fp, jitter, amb);
+  if (F_CLOUDS && uCloudN > 0 && !DBG(DBG_CLOUDS)) {
+    vec4 c = CLOUDS(d, fp, jitter, amb);
     col = c.rgb + c.a * col;
   }
   return applyFog(col, d, 60000.0, amb);
@@ -3033,16 +3113,16 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
 
 vec3 viewRadiance(vec3 ro, vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   vec3 beacon = vec3(0.0);
-  if ((uLand.x > 0.5 || uPeak.x > 0.0) && d.y < 0.5 && !gNoLand && !DBG(DBG_LAND)) {
-    vec3 n;
+  if (F_LAND && (uLand.x > 0.5 || uPeak.x > 0.0) && d.y < 0.5 && !gNoLand && !DBG(DBG_LAND)) {
+    vec3 n = vec3(0.0, 1.0, 0.0);
     gBeacon = 0.0;
     // The city first; where it misses, or with hills, mountains or forest, the land and volcano.
-    bool city = uLand.x > 3.5;
-    float t = city ? cityTrace(ro, d, fp, n) : -1.0;
-    if (t < 0.0 && (!city || uPeak.x > 0.0)) { city = false; t = landTrace(ro, d, fp); }
+    bool city = F_CITY && uLand.x > 3.5;
+    float t = city ? CITY_TRACE(ro, d, fp, n) : -1.0;
+    if (t < 0.0 && (!city || uPeak.x > 0.0)) { city = false; t = LAND_TRACE(ro, d, fp); }
     beacon = vec3(1.0, 0.07, 0.03) * gBeacon * 6.0 * uNightScale * uLandB.w;
     if (t > 0.0) {
-      vec3 c = city ? cityShade(ro, d, t, n, fp, amb) : landShade(ro, d, t, fp, amb);
+      vec3 c = city ? CITY_SHADE(ro, d, t, n, fp, amb) : LAND_SHADE(ro, d, t, fp, amb);
       // Aerial perspective: Rayleigh-blue extinction plus haze over the distance, then fog.
       vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
       return beacon + applyFog(c * tr + horizonSky(d) * (1.0 - tr), d, t, amb);
@@ -3059,31 +3139,31 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
   gSunE = uSunScale * transmittance(OBS, uSunDir.y);
   gMoonE = uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0));
   int type = int(uSurf.x);
-  bool grassy = type == 3 || type == 4, water = type == 1 || type == 2;
+  bool grassy = F_GRASS && (type == 3 || type == 4), water = F_WATER && (type == 1 || type == 2);
   if (DBG(DBG_WATER)) water = false; // plain ground instead: no surface, no reflection pass
   float E = uSurf.y, H = uGrass.x;
-  bool terrain = type >= 5;
+  bool terrain = F_TERRAIN && type >= 5;
   float Dm = d.y < 0.0 ? E / -d.y : 1e9;
   if (terrain) {
-    float tt = terrainTrace(d, fp);
+    float tt = TERRAIN_TRACE(d, fp);
     // Rays that outrun the march below the horizon meet the far, flattened dune sea.
     Dm = tt > 0.0 ? tt : d.y < 0.0 ? max((E + gH0) / -d.y, 6000.0) : -1.0;
   }
   bool ground = (terrain ? Dm > 0.0 : d.y < 0.0) && (uLand.x < 0.5 || Dm < landNear());
   if (!ground) Dm = 1e9;
   float rate = fp * Dm * inversesqrt(max(-d.y, 0.02));
-  if (grassy) grassSetup();
+  if (grassy) GRASS_SETUP();
   float tTop = d.y < 0.0 && E > 1.3 * H ? (E - 1.3 * H) / -d.y : 0.0;
-  if (uTreeN > 0 && ground) {
+  if (F_TREES && uTreeN > 0 && ground) {
     float tm = grassy ? mix(tTop, Dm, 0.5) : Dm;
-    gShade = treeShadow(vec3(d.x * tm, -E, d.z * tm));
+    gShade = TREE_SHADOW(vec3(d.x * tm, -E, d.z * tm));
   }
   vec3 acc = vec3(0.0), ro = vec3(0.0), rd = d;
   float T = 1.0;
   for (int pass = 0; pass < 2; pass++) {
     bool hit = pass == 0 && ground;
     float tTree = 1e9;
-    vec4 tree = uTreeN > 0 ? treesTrace(ro, rd, hit ? Dm : 1e9, fp, jitter, amb, tTree) : vec4(0.0);
+    vec4 tree = F_TREES && uTreeN > 0 ? TREES_TRACE(ro, rd, hit ? Dm : 1e9, fp, jitter, amb, tTree) : vec4(0.0);
     // Grass blades in front of everything else, including from inside the canopy.
     bool inGrass = pass == 0 && grassy && (ground || E < 1.3 * H);
     float tEnd = tTop, t1 = 0.0, tRes = 0.0;
@@ -3091,7 +3171,7 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
       t1 = ground ? Dm : (d.y > 1e-4 ? (1.3 * H - E) / d.y : 1e4);
       tRes = min(uGrass.z * 10.0, 0.8 * gCell.y) / (0.75 * fp) * (0.75 + 0.5 * jitter);
       if (tTop < min(tRes, tTree)) {
-        vec4 g = grassTrace(d, tTop, min(min(t1, tRes), tTree), tRes, fp, amb, tEnd);
+        vec4 g = GRASS_TRACE(d, tTop, min(min(t1, tRes), tTree), tRes, fp, amb, tEnd);
         acc += g.rgb;
         T = 1.0 - g.a;
       }
@@ -3117,15 +3197,15 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
       float tc = bare ? Dm : clamp(tEnd, 0.7 * tRes, hit ? Dm : 1e4);
       vec3 dd = wall ? normalize(vec3(d.x, -0.03, d.z)) : d;
       float rc = fp * tc * inversesqrt(max(-dd.y, 0.02));
-      vec3 soil = grassGround(d.xz * tc, rc, amb);
-      acc += T * (bare ? soil : grassCanopy(dd, d.xz * tc, rc, soil, amb));
+      vec3 soil = GRASS_GROUND(d.xz * tc, rc, amb);
+      acc += T * (bare ? soil : GRASS_CANOPY(dd, d.xz * tc, rc, soil, amb));
       break;
     }
     if (hit && water) {
-      float F;
-      vec3 r;
-      bool under;
-      acc += T * waterSurface(d, Dm, rate, fp, amb, F, r, under);
+      float F = 0.0;
+      vec3 r = vec3(0.0, 1.0, 0.0);
+      bool under = false;
+      acc += T * WATER_SURFACE(d, Dm, rate, fp, amb, F, r, under);
       T *= F;
       if (T < 0.004) break;
       ro = vec3(d.x * Dm, -E, d.z * Dm);
@@ -3135,7 +3215,7 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
       continue;
     }
     if (hit) {
-      acc += T * (terrain ? terrainShade(d, Dm, fp, amb) : plainGround(d.xz * Dm, rate) * (directLight(vec3(0.0, 1.0, 0.0)) * gShade + amb));
+      acc += T * (terrain ? TERRAIN_SHADE(d, Dm, fp, amb) : plainGround(d.xz * Dm, rate) * (directLight(vec3(0.0, 1.0, 0.0)) * gShade + amb));
       break;
     }
     acc += T * viewRadiance(ro, rd, fp, fpOut, jitter, amb);
@@ -3359,7 +3439,24 @@ const SETTERS = {
   mat3: (l, v) => gl.uniformMatrix3fv(l, false, v),
 };
 
-const skyProg = program(VS, SKY_FS(), { uTrans: 0, uSkySun: 1, uSkyMoon: 2, uNoise3: 3 });
+// One sky program per feature set, compiled on first use and kept.
+const skyPrograms = new Map();
+function skyProgram(feats = ALL_FEATURES) {
+  const key = FEATURES.map(k => feats[k] ? 1 : 0).join('');
+  let prog = skyPrograms.get(key);
+  if (!prog) skyPrograms.set(key, prog = program(VS, SKY_FS(false, false, feats), { uTrans: 0, uSkySun: 1, uSkyMoon: 2, uNoise3: 3 }));
+  return prog;
+}
+
+// The features the current scene draws, matching the shader's own run-time tests (after derive()).
+function sceneFeatures() {
+  const t = P.surface;
+  return {
+    MOON: !!P.moon, BODIES: D.bodyN > 0, AURORA: P.aurora > 0, NIGHT: D.nightScale > 2e-3, CLOUDS: D.cloudN > 0,
+    LAND: P.land > 0 || P.peak > 0, CITY: P.land === 4, TERRAIN: t >= 5, GRASS: t === 3 || t === 4,
+    TREES: D.treeN > 0, WATER: t === 1 || t === 2,
+  };
+}
 
 const noise3 = (() => {
   const prog = program(VS, NOISE3_FS);
@@ -3617,7 +3714,7 @@ const PHONE = matchMedia('(pointer: coarse)').matches;
 const FRAME_PX = PHONE ? 1 << 17 : 1 << 21;
 
 function drawSky(fbo, w, h, pix0, step, values, opts = {}) {
-  const sky = opts.prog || skyProg; // ?diag passes its own build of the shader
+  const sky = opts.prog || skyProgram(sceneFeatures()); // ?diag passes its own builds
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
   gl.viewport(0, 0, w, h);
   gl.useProgram(sky.p);
@@ -5236,7 +5333,7 @@ async function runDiag() {
   }
   const cases = diagCases(), runs = cases.filter(c => !c.sec);
   // Warm up both programs (drivers may build the pipeline on first draw) so timings are per render.
-  for (const prog of [skyProg, dg.prog, dg.fast]) if (prog) diagRender({ to: 't8', w: 8, h: 8, prog }, sceneValues([8, 8]));
+  for (const prog of [dg.prog, dg.fast]) if (prog) diagRender({ to: 't8', w: 8, h: 8, prog }, sceneValues([8, 8]));
   let done = 0, passed = 0, caught = 0, shown = 0;
   for (const c of cases) {
     if (c.sec) { el('td', '', el('tr', 'sec', table), c.sec).colSpan = 9; continue; }
@@ -5249,7 +5346,7 @@ async function runDiag() {
       Object.assign(ANIM, { time: 0, micro: 0, cloud: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] });
       const values = sceneValues([c.w * (c.step || 1), c.h * (c.step || 1)]);
       gl.getError();
-      const t = performance.now(), { px, f } = diagRender({ ...c, prog: c.fast ? dg.fast : c.diag ? dg.prog : skyProg }, values);
+      const t = performance.now(), { px, f } = diagRender({ ...c, prog: c.fast ? dg.fast : c.diag ? dg.prog : skyProgram(sceneFeatures()) }, values);
       row.ms = Math.round(performance.now() - t);
       row.glError = gl.getError();
       if (gl.isContextLost()) throw new Error('WebGL context lost');
