@@ -72,11 +72,10 @@ button { font: inherit; color: inherit; }
 .saverow { display: flex; gap: 6px; padding: 0 14px 12px; flex: none; }
 .saverow .num { margin: 0; text-align: left; font-family: inherit; flex: 1; }
 .saverow .btn { flex: none; padding: 6px 12px; }
-.tabs { display: flex; gap: 2px; overflow-x: auto; padding: 6px 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; scrollbar-width: none; overscroll-behavior-x: contain; }
-.tabs::-webkit-scrollbar { display: none; }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 6px 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; }
 .subhead { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; font-size: 9.5px; letter-spacing: .2em; text-transform: uppercase; }
 .tab {
-  flex: none; width: 62px; background: none; border: 0; border-radius: 7px; color: var(--dim); cursor: pointer;
+  background: none; border: 0; border-radius: 7px; color: var(--dim); cursor: pointer;
   padding: 6px 0 5px; display: grid; justify-items: center; gap: 3px; font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
 }
 .tab:hover { color: var(--ink); }
@@ -154,6 +153,7 @@ select option { background: #111; }
 #bar.capture .capgroup { display: flex; }
 #bar.compact > :not(.capgroup) { display: none; }
 #bar.compact .capgroup { margin-left: 0; padding-left: 4px; border-left: 0; }
+#bar.tight .capgroup > .info { display: none; }
 #bar .btn.ghost { border-color: transparent; color: var(--dim); padding: 7px 8px; min-width: 64px; }
 #bar .btn.ghost:hover { color: var(--ink); }
 #bar .clock { min-width: 58px; text-align: center; margin: 0; }
@@ -193,7 +193,11 @@ select option { background: #111; }
 #err { position: fixed; inset: 0; padding: 24px; white-space: pre-wrap; font: 11px/1.5 var(--mono); color: var(--ink); background: var(--void); display: none; z-index: 30; }
 
 @media (max-width: 700px) {
-  #panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; height: 48%; }
+  /* Phones: the whole sheet scrolls as one; Reseed and Capture stay pinned to its bottom edge. */
+  #panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; height: 48%; display: block; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  #panel::-webkit-scrollbar { display: none; }
+  .tabbody { overflow: visible; }
+  .foot { position: sticky; bottom: 0; background: rgba(9, 10, 15, .97); }
   #credit { top: 60px; left: 50%; right: auto; bottom: auto; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; font-size: 8px; letter-spacing: .01em; white-space: nowrap; }
   #credit svg { width: 9px; height: 9px; }
   #credit .gh { display: none; }
@@ -480,8 +484,9 @@ const PRESETS = [
   } },
   { name: 'Abyss', p: {
     sunElev: -40, heading: 60, pitch: 80, fov: 65,
-    nightZenith: '#05070f', nightHorizon: '#0a0d1a', nightBright: 1,
-    starDensity: 0.35, starDepth: 0.6, starBright: 0.9, starSize: 0.75, starColor: 0.2, airglow: 0, lpStrength: 0,
+    nightZenith: '#03050d', nightHorizon: '#0b1024', nightBright: 1.1, nightVibrance: 0.2, airglow: 0, lpStrength: 0,
+    starDensity: 0.5, starDepth: 0.95, starBright: 1.1, starSize: 0.8, starSizeVar: 0.7, starColor: 0.35,
+    starTint: '#a9b8ff', starTintAmt: 0.15, extinction: 0.3, vignette: 0.25,
   } },
   { name: 'Violet Stream', p: {
     sunElev: -40, heading: 122, pitch: 72, fov: 70, roll: 40, skyRotation: 54, latitude: 30,
@@ -491,57 +496,109 @@ const PRESETS = [
     filter: '#9b7bff', filterAmt: 0.3,
   } },
   { name: 'Fire Sky', p: {
-    sunElev: -1.5, sunHeading: 260, heading: 240, pitch: 60, fov: 80,
-    ...cloudLayer(1, 'altocumulus', { Cover: 0.75, Dens: 0.7, Alt: 5, Thick: 0.8, Scale: 2.2, Billow: 0.35, Cells: 0.2, Streak: 0.45, Detail: 0.5, Soft: 0.45 }),
-    cGlow: 2, cLightTint: '#ff5a1f', cLightAmt: 0.4, cShadowTint: '#4b3b8f', cShadowAmt: 0.6,
-    tone: 2, saturation: 1.2,
+    sunElev: -1.2, sunHeading: 262, heading: 250, pitch: 14, fov: 84,
+    ...cloudLayer(1, 'altocumulus', { Cover: 0.66, Dens: 0.8, Alt: 4.5, Thick: 0.7, Scale: 1.3, Billow: 0.4, Cells: 0.65, Streak: 0.15, Detail: 0.5, Soft: 0.3 }),
+    ...cloudLayer(2, 'cirrus', { Cover: 0.4, Dens: 0.3 }),
+    cGlow: 2, cLightTint: '#ff4a1a', cLightAmt: 0.4, cShadowTint: '#3a2a6a', cShadowAmt: 0.5,
+    surfWaves: 0.12, land: 1, landHeight: 1.6, landLayers: 2, landColor: '#0e0f16',
+    ev: -0.2, tone: 2, saturation: 1.1,
   } },
   { name: 'Milky Way Core', p: {
     sunElev: -30, latitude: 30, skyRotation: 120, heading: 176, pitch: 25, fov: 95,
-    mw: 1.4, mwCore: 1.2, mwDust: 1, mwWarmth: 0.6, starDensity: 0.85, starDepth: 1,
+    mw: 1.4, mwCore: 1.4, mwDust: 0.85, mwWarmth: 0.75, mwHII: 0.6, mwCoreColor: '#ffd29a', mwArmColor: '#e0e6ff',
+    starDensity: 0.85, starDepth: 1, starSizeVar: 0.5,
     nightZenith: '#0b0e22', nightHorizon: '#1d1c38',
-    land: 2, landHeight: 3.5, landColor: '#0b0c12',
+    surfWaves: 0.12, land: 2, landHeight: 3.5, landColor: '#0b0c12',
   } },
   { name: 'Aurora Lake', p: {
-    sunElev: -25, heading: 0, pitch: 18, fov: 100,
-    aurora: 1.5, auroraSpread: 0.5, starDensity: 0.85, ...LAKE, land: 2, landHeight: 4, landColor: '#0b0c12',
+    sunElev: -25, heading: 0, pitch: 14, fov: 95,
+    aurora: 1.4, auroraSpread: 0.45, starDensity: 0.85, starSizeVar: 0.5,
+    ...LAKE, surfWaves: 0.12, land: 2, landHeight: 3.5, landLayers: 2, landColor: '#0b0c12',
   } },
   { name: 'Mirror Flats', p: {
-    sunElev: -5, sunHeading: 250, heading: 240, pitch: 6, fov: 85,
+    sunElev: -2.5, sunHeading: 250, heading: 240, pitch: 6, fov: 85,
     surface: 2, surfColorA: '#ebe8e3', surfColorB: '#b6aea3', surfReflect: 0.85, surfWaves: 0.12,
     land: 1, landHeight: 1.2, landLayers: 2, landColor: '#3a3a4a',
-    ...cloudLayer(2, 'cirrus', { Cover: 0.5, Dens: 0.3 }),
+    ...cloudLayer(2, 'cirrus', { Cover: 0.5, Dens: 0.3 }), cGlow: 1.6, cLightTint: '#ff8a5c', cLightAmt: 0.3, tone: 2,
   } },
   { name: 'Golden Fields', p: {
-    sunElev: 5, sunHeading: 240, heading: 230, pitch: 4, fov: 85,
-    surface: 4, surfColorA: '#cfa557', surfColorB: '#94702f', surfWaves: 0.8,
-    land: 3, landHeight: 1.2, landLayers: 2, landColor: '#1d2318',
-    ...cloudLayer(0, 'cumulus', { Cover: 0.38 }),
+    sunElev: 5, sunHeading: 240, heading: 230, pitch: 2, fov: 80,
+    surface: 4, surfColorA: '#b08a45', surfColorB: '#e0bd6e', surfWaves: 0.8, grassHeight: 0.9, grassWidth: 0.7, grassLean: 0.15, surfRows: 135,
+    land: 3, landHeight: 1.4, landLayers: 2, landColor: '#1d2318', haze: 0.35,
+    ...cloudLayer(0, 'cumulus', { Cover: 0.32 }),
   } },
   { name: 'Dune Sunset', p: {
-    sunElev: 1, sunHeading: 255, heading: 245, pitch: 2, fov: 80,
-    surface: 5, surfColorA: '#cf9a62', surfColorB: '#a86d3e', surfWaves: 0.7, haze: 0.6, mie: 2,
+    sunElev: 3, sunHeading: 255, heading: 215, pitch: 0, fov: 72,
+    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', surfWaves: 0.7, relief: 1.2, eyeHeight: 6, haze: 0.3, mie: 1.5,
   } },
   { name: 'High Noon', p: {
     sunElev: 55, sunHeading: 180, heading: 200, pitch: 12, fov: 90,
-    surface: 3, surfColorA: '#3a5a22', surfColorB: '#6e7d2f', surfWaves: 0.6,
-    land: 1, landHeight: 2.5, landColor: '#2d3a26',
+    surface: 3, surfColorA: '#3a5a22', surfColorB: '#6e7d2f', surfWaves: 0.6, flowers: 0.25,
+    land: 1, landHeight: 2.5, landColor: '#2d3a26', trees: 3, treeNear: 80, treeFar: 260, treeSpread: 100,
     ...cloudLayer(0, 'cumulus', {}),
   } },
   { name: 'Star Trails', p: {
     sunElev: -30, latitude: 35, heading: 0, pitch: 28, fov: 110, trails: 75, trailDensity: 0.5,
-    land: 1, landHeight: 2, landColor: '#0c0d14',
+    surface: 0, surfColorA: '#0d0e14', surfColorB: '#08090d',
+    land: 3, landHeight: 2.2, landLayers: 2, landColor: '#0a0b10', forestMix: 1, forestDensity: 0.9,
   } },
   { name: 'Moonlit Snow', p: {
     sunElev: -30, moon: true, moonPhase: 0.5, moonElev: 30, moonHeading: 160, moonHalo: 0.8, moonLight: 3,
-    heading: 160, pitch: 14, fov: 90,
-    surface: 6, surfColorA: '#eef2fa', surfColorB: '#cad6ea', surfSparkle: 0.6,
-    land: 2, landHeight: 5, landColor: '#3a3f4f',
+    heading: 160, pitch: 10, fov: 85,
+    surface: 6, surfColorA: '#eef2fa', surfColorB: '#cad6ea', surfSparkle: 0.8, relief: 0.8,
+    land: 2, landHeight: 5, landColor: '#4a4f5c', landSnow: 0.85, landDepth: 2,
   } },
   { name: 'Deep Space', p: {
     sunElev: -45, heading: 90, pitch: 89, fov: 80,
     nightZenith: '#05030c', nightHorizon: '#05030c', airglow: 0, lpStrength: 0,
-    neb: 1.4, mw: 0.4, starDensity: 1, starDepth: 1, starColor: 0.7,
+    neb: 1.1, nebScale: 0.8, nebWarp: 0.6, nebA: '#e8466a', nebB: '#2a8fd0',
+    mw: 0.4, starDensity: 1, starDepth: 1, starColor: 0.7, starSizeVar: 0.6,
+    gal: 0.8, galSize: 12, galElev: 70, galHeading: 30,
+  } },
+  { name: 'Ringed Giant', p: {
+    sunElev: -22, heading: 200, pitch: 14, fov: 70,
+    b0On: true, b0Size: 30, b0Elev: 20, b0Heading: 200, b0Phase: 0.3, b0Light: 25, b0Lean: 14,
+    starDensity: 0.8, starSizeVar: 0.5, mw: 0.6, surfWaves: 0.3,
+  } },
+  { name: 'Lone Tree', p: {
+    sunElev: 1.5, sunHeading: 120, heading: 200, pitch: 5, fov: 55,
+    trees: 1, treeHeight: 10, treeNear: 75, treeHeading: 197, treeWidth: 1.15,
+    surfWaves: 0.05, land: 2, landHeight: 4.5, landLayers: 2, landColor: '#56504c', landSnow: 0.7, landDepth: 3, haze: 0.3,
+    ...cloudLayer(2, 'cirrus', { Cover: 0.35, Dens: 0.25 }), cGlow: 1.4, cLightTint: '#ffb08a', cLightAmt: 0.3,
+  } },
+  { name: 'Wildflower Meadow', p: {
+    sunElev: 6, sunHeading: 235, heading: 215, pitch: -1, fov: 70,
+    surface: 3, surfColorA: '#2f4a1a', surfColorB: '#8a9a3a', flowers: 0.65, grassHeight: 0.5,
+    trees: 4, treeNear: 70, treeFar: 300, treeSpread: 90, treeHeading: 205,
+    land: 1, landHeight: 2, landLayers: 3, landColor: '#3b4a2a', haze: 0.35,
+    ...cloudLayer(0, 'cumulus', { Cover: 0.28 }),
+  } },
+  { name: 'Alpine Lake', p: {
+    sunElev: 3, sunHeading: 285, heading: 205, pitch: 3, fov: 65,
+    surfWaves: 0.07, land: 2, landHeight: 9, landLayers: 3, landColor: '#5a524c', landSnow: 0.65, landDepth: 2.5, haze: 0.25,
+  } },
+  { name: 'Twin Moons', p: {
+    sunElev: -7, sunHeading: 260, heading: 230, pitch: 8, fov: 70,
+    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', relief: 1, eyeHeight: 5,
+    b0On: true, b0Type: 4, b0ColorA: '#1e4f8c', b0ColorB: '#6a7a3c', b0Atmo: 0.9, b0Ring: 0, b0Size: 22, b0Elev: 14, b0Heading: 215, b0Phase: 0.55, b0Light: 160,
+    b1On: true, b1Type: 5, b1ColorA: '#1d1612', b1ColorB: '#ff6a1f', b1Atmo: 0.2, b1Size: 5, b1Elev: 30, b1Heading: 245, b1Phase: 0.4,
+  } },
+  { name: 'Galaxy Rise', p: {
+    sunElev: -25, heading: 200, pitch: 18, fov: 85,
+    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', relief: 1, eyeHeight: 4,
+    gal: 1.3, galSize: 45, galElev: 22, galHeading: 200, galIncl: 62, galAngle: 25, mw: 0.5, starSizeVar: 0.5,
+  } },
+  { name: 'Ocean Glitter', p: {
+    sunElev: 9, sunHeading: 200, heading: 200, pitch: 1, fov: 70,
+    surface: 1, surfColorA: '#061c2a', surfColorB: '#2b8f7c', surfWaves: 1.6, surfScale: 2.6, surfMotion: 1.6,
+    ...cloudLayer(0, 'cumulus', { Cover: 0.36 }), haze: 0.15, tone: 1,
+  } },
+  { name: 'Pine Ridge', p: {
+    sunElev: 4, sunHeading: 100, heading: 130, pitch: 2, fov: 70,
+    surface: 3, surfColorA: '#2f4a1a', surfColorB: '#7d8c3a', grassHeight: 0.35,
+    land: 3, forestMix: 1, forestDensity: 0.95, landHeight: 3.2, landLayers: 4, landColor: '#16201a', landDepth: 1.5,
+    fog: 0.7, fogHeight: 50, fogGlow: 0.6,
+    trees: 4, treeType: 1, treeHeight: 22, treeNear: 30, treeFar: 120, treeSpread: 100, treeHeading: 140,
   } },
 ];
 
@@ -714,8 +771,9 @@ function placeBar() {
   const vw = innerWidth, narrow = vw <= 700;
   const right = (!panel.classList.contains('hidden') && !narrow ? vw - 324 : vw) - 8;
   const left = narrow || C.on ? 8 : $('credit').getBoundingClientRect().right + 12;
-  bar.classList.remove('compact');
+  bar.classList.remove('compact', 'tight');
   if (C.on && bar.offsetWidth > right - left) bar.classList.add('compact');
+  if (C.on && bar.offsetWidth > right - left) bar.classList.add('tight');
   const half = bar.offsetWidth / 2;
   bar.style.left = clamp(F.cx, left + half, Math.max(left + half, right - half)) + 'px';
 }
@@ -2554,16 +2612,20 @@ vec3 aurora(vec3 d, float fp, float jitter) {
     vec2 xz = d.xz * t;
     float along = dot(xz, vec2(hd.y, -hd.x)), across = dot(xz, hd);
     float rate = fp * t * 0.001;
-    float fold = (nz(vec3(along * 0.0008, time * 0.0015, 0.37), rate * 0.8).a - 0.5) * 900.0
-               + (nz(vec3(along * 0.0035, time * 0.004, 0.71), rate * 3.5).a - 0.5) * 160.0;
+    // Curtains meander at three scales; a few run side by side.
+    float fold = (nz(vec3(along * 0.0006, time * 0.0015, 0.37), rate * 0.6).a - 0.5) * 420.0
+               + (nz(vec3(along * 0.003, time * 0.004, 0.71), rate * 3.0).a - 0.5) * 90.0
+               + (nz(vec3(along * 0.012, time * 0.01, 0.55), rate * 12.0).r - 0.5) * 18.0;
     float c = across - base - fold;
-    float band = exp(-0.5 * pow(c / 9.0, 2.0)) + 0.7 * exp(-0.5 * pow((c - 210.0) / 12.0, 2.0)) + 0.45 * exp(-0.5 * pow((c + 380.0) / 14.0, 2.0));
-    band += 0.12 * exp(-0.5 * pow(c / 120.0, 2.0));
+    float band = exp(-0.5 * pow(c / 7.0, 2.0)) + 0.55 * exp(-0.5 * pow((c - 120.0) / 10.0, 2.0)) + 0.35 * exp(-0.5 * pow((c + 260.0) / 12.0, 2.0));
+    band += 0.1 * exp(-0.5 * pow(c / 90.0, 2.0));
     if (band < 0.002) continue;
-    float rays = 0.3 + 0.7 * smoothstep(0.3, 0.75, nz(vec3(along * 0.045, time * 0.03, 0.13 + hf * 0.05), rate * 45.0).r);
-    float vprof = smoothstep(0.0, 0.05, hf) * exp(-hf * 2.3);
-    vec3 col = mix(uAuroraA, uAuroraB, smoothstep(0.15, 0.7, hf));
-    acc += col * band * rays * vprof;
+    // Fine vertical rays and brighter knots along the curtain.
+    float rays = 0.45 + 0.55 * smoothstep(0.35, 0.8, nz(vec3(along * 0.09, time * 0.03, 0.13 + hf * 0.04), rate * 90.0).r);
+    float knots = 0.55 + 0.45 * smoothstep(0.3, 0.7, nz(vec3(along * 0.004, time * 0.006, 0.91), rate * 4.0).r);
+    float vprof = smoothstep(0.0, 0.03, hf) * exp(-hf * 3.0);
+    vec3 col = mix(uAuroraA, uAuroraB, smoothstep(0.12, 0.65, hf));
+    acc += col * band * rays * knots * vprof;
   }
   return acc * uAurora.x * 0.12;
 }
@@ -3855,6 +3917,7 @@ const TABS = [
       { key: 'sunDisk', label: 'Sun Disk', type: 'toggle' },
       { key: 'sunSize', label: 'Disk Size', min: 0.5, max: 8, step: 0.05, fmt: v => v.toFixed(2) + '×', when: () => P.sunDisk },
       { key: 'sunGlow', label: 'Lens Glow', min: 0, max: 3, step: 0.01, fmt: fmt(2) },
+      { type: 'custom', build: body => { el('div', 'note', body, 'Option-drag (Alt-drag) the sky to place the sun.'); } },
     ]],
     ['Atmosphere', [
       { key: 'rayleigh', label: 'Air Density', min: 0.2, max: 3, step: 0.01, fmt: fmt(2) },
@@ -4467,6 +4530,8 @@ function renderMenu(menu) {
     const body = el('div', 'body', sec);
     for (const it of items) buildItem(it, body);
   }
+  // On phones the whole panel scrolls; bring a new menu's start back into view.
+  panel.scrollTop = Math.min(panel.scrollTop, $(C.on ? 'subhead' : 'tabs').offsetTop);
   syncUI();
 }
 
@@ -4474,7 +4539,6 @@ function showTab(id) {
   tab = id;
   store('horizon-tab', id);
   for (const [k, b] of Object.entries(tabButtons)) b.classList.toggle('active', k === id);
-  tabButtons[id].scrollIntoView({ block: 'nearest', inline: 'nearest' });
   if (!C.on) renderMenu(TABS.find(t => t.id === id));
 }
 
@@ -4521,7 +4585,7 @@ function buildLookStrip() {
 
 function buildUI() {
   const head = el('div', 'head', panel);
-  el('div', 'title', head, 'Horizon');
+  el('div', 'title', head, 'Horizon Engine');
   const hr = el('div', 'head-r', head);
   statEl = el('span', 'stat', hr);
   for (const [title, icon, fn, has] of [
@@ -4577,13 +4641,12 @@ function buildUI() {
   back.innerHTML = svg('<path d="M10 3.5L5.5 8l4.5 4.5"/>');
   back.onclick = () => setCaptureMode(false);
   el('span', null, sub, CAPTURE_MENU.label);
-  for (const strip of [tabs, $('looks')]) {
-    strip.addEventListener('wheel', e => {
-      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-      strip.scrollLeft += e.deltaY;
-      e.preventDefault();
-    }, { passive: false });
-  }
+  const strip = $('looks');
+  strip.addEventListener('wheel', e => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    strip.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
   tabBody = el('div', 'tabbody', panel);
   const foot = el('div', 'foot', panel);
   const seed = el('button', 'btn', foot, 'Reseed');
@@ -4653,14 +4716,26 @@ function radPerCss() {
   return P.proj === 3 ? TAU / F.w : P.fov * DEG / Math.hypot(F.w, F.h);
 }
 
+// Option-drag (Alt-drag) puts the sun under the pointer.
+let placing = false;
+
+function placeSun(e) {
+  const v = dirAtImage(...cssToImage(e.clientX, e.clientY));
+  setSkyVector(v, 'sunElev', 'sunHeading');
+  P.sunElev = clamp(P.sunElev, -24, 72);
+  changed();
+}
+
 canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   canvas.setPointerCapture(e.pointerId);
+  if (e.altKey && !pointers.size) { placing = true; placeSun(e); return; }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.classList.add('drag');
 });
 canvas.addEventListener('pointermove', e => {
   if (C.on && C.loupe && e.pointerType === 'mouse') { loupeAt = [e.clientX, e.clientY]; queueLoupe(); }
+  if (placing) { placeSun(e); return; }
   const prev = pointers.get(e.pointerId);
   if (!prev) return;
   if (pointers.size === 1) {
@@ -4677,9 +4752,12 @@ canvas.addEventListener('pointermove', e => {
   changed();
 });
 canvas.addEventListener('lostpointercapture', e => {
+  placing = false;
   pointers.delete(e.pointerId);
   if (!pointers.size) canvas.classList.remove('drag');
 });
+for (const type of ['keydown', 'keyup']) window.addEventListener(type, e => canvas.classList.toggle('place', e.altKey));
+window.addEventListener('blur', () => canvas.classList.remove('place'));
 canvas.addEventListener('pointerleave', () => { loupeAt = null; queueLoupe(); });
 
 function zoom(f) {
