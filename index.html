@@ -1503,7 +1503,7 @@ float cloudDensity(int i, vec3 pw, float hf, float rate, bool detailed) {
   // soften with the pixel footprint instead of breaking into blocks.
   float top = max(hf - 0.2, 0.0) / 0.8;
   float prof = mix(4.0 * hf * (1.0 - hf), smoothstep(0.0, 0.1, hf) * (1.0 - top * top), puff);
-  float lo = 1.0 - f.y + (1.0 - prof) * mix(0.4 - 0.18 * soft, 0.3, puff);
+  float lo = 1.0 - f.y + (1.0 - prof) * mix(0.6 - 0.25 * soft, 0.3, puff);
   float d = remap(f.x, lo, lo + 0.06 + 0.3 * soft + min(rate * 2.0, 0.3));
   if (d <= 0.0) return 0.0;
   d = mix(d * d * (3.0 - 2.0 * d), sqrt(d), puff);
