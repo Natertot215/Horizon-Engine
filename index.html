@@ -299,7 +299,8 @@ const DEFAULTS = {
   lpStrength: 0.12, lpColor: '#c98a6a', lpHeading: 20, lpFocus: 0.5, lpHeight: 0.12,
   airglow: 0.06, airglowColor: '#4f8a5e',
   surface: 1, eyeHeight: 2, surfScale: 1, surfColorA: '#0a1820', surfColorB: '#1f5a4e', surfWaves: 0.35, surfReflect: 1,
-  surfWind: 60, surfSparkle: 0.5, surfMotion: 1, surfRows: 20, surfFoam: 0.5,
+  surfWind: 60, surfSparkle: 0.5, surfMotion: 1, surfRows: 65, surfFoam: 0.5,
+  grassHeight: 0.45, grassDensity: 1, grassWidth: 1, grassLean: 0.5, grassDry: 0.15, flowers: 0, flowerColor: '#f4e7a1',
   land: 0, landHeight: 3, landRough: 0.5, landLayers: 3, landDepth: 1, landHeading: 0, landSeed: 1,
   landColor: '#2a2d36', cityLights: 0.5, cityColor: '#ffbe76',
   peak: 0, peakHeading: 200, peakWidth: 14, peakSnow: 0.35,
@@ -345,8 +346,8 @@ const SURFACES = [
   ['Ocean', 1, { surfColorA: '#061c2a', surfColorB: '#2b8f7c', surfReflect: 1, surfWaves: 1.6, surfScale: 2.6, surfMotion: 1.6 }],
   ['Plain', 0, { surfColorA: '#1b1c21', surfColorB: '#121317', surfReflect: 0, surfWaves: 0.5, surfScale: 1 }],
   ['Salt Flat', 2, { surfColorA: '#ebe8e3', surfColorB: '#b6aea3', surfReflect: 0.85, surfWaves: 0.12, surfScale: 1 }],
-  ['Grass', 3, { surfColorA: '#3a5a22', surfColorB: '#6e7d2f', surfReflect: 0, surfWaves: 0.6, surfScale: 1 }],
-  ['Wheat', 4, { surfColorA: '#cfa557', surfColorB: '#94702f', surfReflect: 0, surfWaves: 0.8, surfScale: 1 }],
+  ['Grass', 3, { surfColorA: '#2f4a1a', surfColorB: '#8a9a3a', surfReflect: 0, surfWaves: 0.6, surfScale: 1, grassHeight: 0.45, grassWidth: 1, grassLean: 0.5 }],
+  ['Wheat', 4, { surfColorA: '#b08a45', surfColorB: '#e0bd6e', surfReflect: 0, surfWaves: 0.8, surfScale: 1, grassHeight: 0.9, grassWidth: 0.7, grassLean: 0.15 }],
   ['Desert', 5, { surfColorA: '#cf9a62', surfColorB: '#a86d3e', surfReflect: 0, surfWaves: 0.7, surfScale: 1 }],
   ['Snow', 6, { surfColorA: '#eef2fa', surfColorB: '#cad6ea', surfReflect: 0, surfWaves: 0.5, surfScale: 1, surfSparkle: 0.6 }],
   ['Rock', 7, { surfColorA: '#4b4743', surfColorB: '#2b2927', surfReflect: 0, surfWaves: 0.5, surfScale: 1 }],
@@ -688,6 +689,12 @@ float hash12(vec2 p) {
 }
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+float valueNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+}
 
 vec4 fetchBilinear(sampler2D t, vec2 x, vec2 size) {
   vec2 f = clamp(x, 0.0, 1.0) * (size - 1.0);
@@ -1535,6 +1542,299 @@ vec3 shadeWater(vec3 d, float Dm, float rate, float fp, float fpOut, float jitte
   return col;
 }
 
+// ── Grass ──
+
+// Blades sit on a grid whose u axis runs downwind. A blade is rooted in its cell and leans downwind
+// by at most one cell, so a ray crossing cell (i, j) only tests the blades of (i, j) and (i - 1, j).
+// In its face frame a blade's spine follows a = kb·y², so the ray test is a quadratic.
+const int GRASS_K = 5;
+
+vec2 gWind, gCell, gLean, gOff; // grid u axis (world xz), cell size, lean direction and origin offset in grid space
+float gSigma;
+bool gWheat;
+
+struct Blade { vec2 root; vec2 nh; float kb; float ka; float hy; float w; float kind; uint h; };
+
+float grassGust(vec2 uv, float t) {
+  return 0.55 * sin(uv.x * 0.8 - t * 1.9 + 0.8 * sin(uv.y * 0.27 + t * 0.15))
+       + 0.30 * sin(uv.x * 2.1 + uv.y * 0.6 - t * 3.1)
+       + 0.15 * sin(uv.y * 1.3 + uv.x * 0.5 - t * 1.1);
+}
+
+Blade grassBlade(ivec2 c, int k, float t) {
+  Blade b;
+  uint h = hash3u(uvec3(uvec2(c + 1000000), uint(k) + 977u));
+  float u0 = rnd(h), v0 = 0.18 + 0.64 * rnd(h);
+  b.root = (vec2(c) + vec2(u0, v0)) * gCell - gOff;
+  // Kind: 0 leaf blade, 1 seed-head stem standing above the canopy, 2 flower, 3 wheat stalk.
+  float kind = rnd(h), len;
+  if (gWheat) {
+    v0 = 0.22 + 0.56 * v0;
+    b.root.y = (float(c.y) + v0) * gCell.y - gOff.y;
+    b.kind = kind < 0.82 ? 3.0 : 0.0;
+    len = uGrass.x * (b.kind > 2.5 ? 0.86 + 0.14 * rnd(h) : 0.3 + 0.3 * rnd(h)) * (0.92 + 0.16 * valueNoise(b.root * 0.4 + 3.3));
+    b.w = uGrass.z * (b.kind > 2.5 ? 0.6 : 1.4);
+  } else {
+    b.kind = kind < uGrassB.y * 0.12 ? 2.0 : kind > 0.93 ? 1.0 : 0.0;
+    len = uGrass.x * (b.kind > 0.5 ? 1.05 + 0.4 * rnd(h) : (0.45 + 0.55 * rnd(h)) * (0.6 + 0.8 * valueNoise(b.root * 1.3 + 7.1)));
+    b.w = uGrass.z * (b.kind > 0.5 ? 0.35 : 0.7 + 0.6 * rnd(h));
+  }
+  float gust = grassGust(b.root, t) + 0.25 * sin(t * (2.0 + 2.0 * rnd(h)) + rnd(h) * TAU);
+  float lean = len * clamp(0.06 + 0.55 * uGrass.w * rnd(h) + 0.12 * uSurfA.a * (1.0 + gust), 0.0, 0.85) * (b.kind > 0.5 && b.kind < 2.5 ? 0.4 : 1.0);
+  float side = b.kind > 1.5 && b.kind < 2.5 ? 0.0 : (rnd(h) - 0.5) * 0.8;
+  vec2 L = lean * normalize(gLean + vec2(-gLean.y, gLean.x) * side);
+  float m = min(v0, 1.0 - v0) * gCell.y - (b.kind > 1.5 && b.kind < 2.5 ? 0.012 : 0.5 * b.w);
+  L = vec2(clamp(L.x, -u0 * gCell.x, (2.0 - u0) * gCell.x - b.w), clamp(L.y, -m, m));
+  b.hy = sqrt(max(len * len - dot(L, L), 0.05 * len * len));
+  float phi = rnd(h) * TAU;
+  b.nh = vec2(cos(phi), sin(phi));
+  b.kb = dot(L, b.nh) / (b.hy * b.hy);
+  b.ka = dot(L, vec2(-b.nh.y, b.nh.x)) / (b.hy * b.hy);
+  b.h = h;
+  return b;
+}
+
+// rd = ray direction in (u, v, up). Returns coverage; outputs hit distance, height and offset
+// across the blade (-1..1), or side = 2 for a flower head.
+float bladeHit(Blade b, vec3 rd, float tA, float tB, float pw0, out float tHit, out float y, out float side) {
+  vec2 wv = vec2(-b.nh.y, b.nh.x);
+  float a0 = -dot(b.root, b.nh), da = dot(rd.xy, b.nh);
+  float b0 = -dot(b.root, wv), db = dot(rd.xy, wv);
+  float E = uSurf.y, dy = rd.z;
+  if (b.kind > 1.5 && b.kind < 2.5) {
+    // Flower head: a small sphere on the stem tip.
+    vec3 c = vec3(b.root + (b.kb * b.nh + b.ka * wv) * b.hy * b.hy, b.hy) - vec3(0.0, 0.0, E);
+    float r = 0.012 * uGrass.z / 0.006, bq = dot(rd, c), cq = dot(c, c) - r * r, disc = bq * bq - cq;
+    if (disc > 0.0) {
+      float t = bq - sqrt(disc);
+      if (t >= tA && t <= tB) {
+        tHit = t;
+        y = b.hy;
+        side = 2.0;
+        return clamp((r - length(cross(rd, c))) / (pw0 * t) + 0.5, 0.0, 1.0);
+      }
+    }
+  }
+  float A = b.kb * dy * dy, B = 2.0 * b.kb * E * dy - da, C = b.kb * E * E - a0;
+  vec2 ts;
+  if (abs(A) < 1e-9) ts = vec2(abs(B) > 1e-12 ? -C / B : -1.0, -1.0);
+  else {
+    float disc = B * B - 4.0 * A * C;
+    if (disc < 0.0) return 0.0;
+    float q = -0.5 * (B + (B >= 0.0 ? 1.0 : -1.0) * sqrt(disc));
+    if (abs(q) < 1e-12) return 0.0;
+    ts = vec2(q / A, C / q);
+    if (ts.y < ts.x) ts = ts.yx;
+  }
+  for (int i = 0; i < 2; i++) {
+    float t = ts[i];
+    if (t < tA || t > tB) continue;
+    float yy = (E + dy * t) / b.hy;
+    if (yy < 0.0 || yy > 1.0) continue;
+    float prof = b.kind < 0.5 ? pow(clamp((1.0 - yy) * 3.0, 0.0, 1.0), 0.6)
+               : b.kind < 1.5 && yy > 0.72 ? 1.0 + 3.2 * sin(PI * min((yy - 0.72) / 0.3, 1.0)) * smoothstep(1.0, 0.96, yy)
+               : b.kind > 2.5 && yy > 0.86 ? 1.0 + 2.6 * sqrt(sin(PI * min((yy - 0.86) / 0.15, 1.0))) * smoothstep(1.0, 0.975, yy) : 1.0;
+    float hw = 0.5 * b.w * prof;
+    float off = b0 + db * t - b.ka * (yy * b.hy) * (yy * b.hy);
+    // Overlap of the blade with the pixel footprint, so sub-pixel blades add the right coverage.
+    float pw = pw0 * t;
+    float a = clamp((min(hw, off + 0.5 * pw) - max(-hw, off - 0.5 * pw)) / pw, 0.0, 1.0);
+    if (a <= 0.0) continue;
+    tHit = t;
+    y = yy * b.hy;
+    side = clamp(off / max(hw, 1e-5), -1.0, 1.0);
+    return a;
+  }
+  return 0.0;
+}
+
+vec3 gSunE, gMoonE;
+
+// Leaf lighting: diffuse on the lit face, yellow-green transmission when backlit, a waxy sheen,
+// and sunlight that thins out toward the base of the canopy. gap < 0 averages over gap sizes.
+vec3 grassLight(vec3 alb, vec3 n, vec3 d, float y, float gap, vec3 amb) {
+  float H = uGrass.x;
+  vec3 col = alb * amb * mix(0.22, 1.0, pow(clamp(y / H, 0.0, 1.0), 0.6));
+  vec3 L = uSunDir;
+  float k = gSigma * max(H - y, 0.0) / max(L.y, 0.04);
+  float shadow = gap >= 0.0 ? exp(-k * (0.3 + 1.4 * gap)) : exp(-0.3 * k) * (1.0 - exp(-1.4 * k)) / max(1.4 * k, 1e-4);
+  float ndl = dot(n, L);
+  vec3 lit = ndl > 0.0 ? alb * ndl : alb * vec3(1.3, 1.5, 0.55) * (-ndl);
+  vec3 hv = normalize(L - d);
+  float spec = ndl > 0.0 ? (0.04 + 0.96 * pow(1.0 - max(dot(-d, hv), 0.0), 5.0)) * 2.3 * pow(max(dot(n, hv), 0.0), 50.0) * ndl : 0.0;
+  col += (lit / PI + spec) * gSunE * shadow;
+  if (uMoonScale > 0.0) col += alb * max(dot(n, uMoonDir), 0.0) / PI * gMoonE * shadow;
+  return col;
+}
+
+const vec3 STRAW = vec3(0.34, 0.25, 0.11);
+
+vec3 shadeBlade(Blade b, vec3 d, float t, float y, float side, vec3 amb) {
+  vec2 wp = vec2(gWind.y, -gWind.x);
+  uint h = b.h;
+  float r1 = rnd(h), r2 = rnd(h), r3 = rnd(h);
+  if (side > 1.5) {
+    // Flower head: sphere normal, petals lit with some translucency.
+    vec2 wv0 = vec2(-b.nh.y, b.nh.x);
+    vec2 cu = b.root + (b.kb * b.nh + b.ka * wv0) * b.hy * b.hy;
+    vec3 c = vec3(cu.x * gWind + cu.y * wp, b.hy).xzy;
+    vec3 p = vec3(d.xz * t, uSurf.y + d.y * t).xzy;
+    vec3 n = normalize(p - c);
+    vec3 alb = uFlower * (0.75 + 0.5 * r1);
+    alb = mix(alb, alb.gbr, step(0.85, r2) * 0.6);
+    return grassLight(alb, normalize(n + vec3(0.0, 0.4, 0.0)), d, y, r3 * 0.3, amb) * 1.3;
+  }
+  vec2 nh = b.nh.x * gWind + b.nh.y * wp, wv = -b.nh.y * gWind + b.nh.x * wp;
+  vec3 n = normalize(vec3(nh.x, -2.0 * b.kb * y, nh.y));
+  if (dot(n, d) > 0.0) n = -n;
+  n = normalize(n + vec3(wv.x, 0.0, wv.y) * side * 0.35);
+  float yy = y / b.hy;
+  // Parallel veins and a pale midrib, visible on blades close to the lens.
+  float veins = 0.93 + 0.07 * sin(side * 23.0 + r1 * 6.0) + 0.12 * exp(-side * side * 40.0);
+  vec3 alb = mix(uSurfA.rgb, uSurfB.rgb, yy * yy) * (0.7 + 0.6 * r1) * mix(0.8, 1.0, yy) * veins;
+  if (gWheat) {
+    // Stalk colour up to the ear, the ear itself in the accent colour; leaves stay greener.
+    vec3 stalk = uSurfA.rgb * (0.8 + 0.4 * r1), ear = uSurfB.rgb * (0.8 + 0.4 * r1);
+    alb = b.kind > 2.5 ? mix(stalk, ear, smoothstep(0.84, 0.9, yy)) : mix(uSurfA.rgb * vec3(0.7, 0.85, 0.5), stalk, 0.5 + 0.5 * uGrassB.x);
+  } else if (b.kind > 0.5) alb = mix(uSurfB.rgb, STRAW, b.kind < 1.5 ? smoothstep(0.6, 0.8, yy) : 0.2);
+  else if (r2 < uGrassB.x * 0.5) alb = mix(alb, STRAW, 0.7);
+  return grassLight(alb, n, d, y, r3, amb);
+}
+
+vec3 grassGround(vec2 P, float rate, vec3 amb) {
+  float n1 = nz(vec3(P / 0.6 * 0.1, 0.61), rate / 0.6 * 0.1).r;
+  vec3 alb = gWheat ? vec3(0.09, 0.065, 0.04) * (0.7 + 0.6 * n1)
+                    : mix(uSurfA.rgb * 0.5, vec3(0.05, 0.04, 0.02), 0.45) * (0.6 + 0.8 * n1);
+  float shadow = exp(-gSigma * uGrass.x / max(uSunDir.y, 0.04));
+  return alb * (gSunE * max(uSunDir.y, 0.0) * shadow / PI + amb * (gWheat ? 0.4 : 0.2));
+}
+
+// Blades below pixel size: the expected first hit, estimated with fixed stratified samples of the
+// same blade population the tracer uses (height profile, face angles weighted by projected area,
+// colours and lighting), so the far field matches the traced blades on average.
+vec3 grassCanopy(vec3 d, vec2 P, float rate, vec3 amb) {
+  float H = uGrass.x, S = uSurf.z;
+  float cb = max(length(d.xz), 1e-4), cot = cb / max(-d.y, 1e-4);
+  vec2 dh = d.xz / cb;
+  // Blade density is full below mid and fades to zero at top (meadow clumps run tall; wheat
+  // stands level with its ears on top).
+  float top = gWheat ? H : 1.3 * H, mid = gWheat ? 0.86 * H : 0.5 * H, Fm = 0.5 * (top - mid);
+  float tauTot = gSigma * cot * (Fm + mid);
+  vec3 sum = vec3(0.0);
+  for (int i = 0; i < 5; i++) {
+    float tau = -log(1.0 - (float(i) + 0.5) / 5.0 * (1.0 - exp(-tauTot)));
+    float F = tau / (gSigma * cot);
+    float y = max(F < Fm ? top - sqrt(2.0 * F * (top - mid)) : mid - (F - Fm), 0.0);
+    float yy = clamp(y / H, 0.0, 1.0);
+    vec3 alb = mix(uSurfA.rgb, uSurfB.rgb, yy * yy) * mix(0.8, 1.0, yy);
+    if (gWheat) alb = mix(uSurfA.rgb, uSurfB.rgb, smoothstep(0.82, 0.9, yy));
+    else {
+      alb = mix(alb, STRAW, 0.35 * uGrassB.x);
+      // Above the leaf canopy only seed-head stems and flowers remain.
+      float above = smoothstep(0.95, 1.1, y / H);
+      alb = mix(alb, mix(mix(uSurfB.rgb, STRAW, 0.6), uFlower * 1.3, clamp(uGrassB.y * 0.6, 0.0, 0.7)), above);
+    }
+    for (int j = 0; j < 4; j++) {
+      float s = asin((float(j) + 0.5) * 0.5 - 1.0);
+      vec2 nh = -vec2(dh.x * cos(s) - dh.y * sin(s), dh.x * sin(s) + dh.y * cos(s));
+      sum += grassLight(alb, normalize(vec3(nh.x, (float(j & 1) - 0.5) * 0.6 * yy, nh.y)), d, y, -1.0, amb);
+    }
+  }
+  vec3 col = mix(sum / 20.0, grassGround(P, rate, amb), exp(-tauTot));
+  // Structure the eye still resolves: clumps, dry patches, gusts combing across the field, and
+  // blade-scale streaks that carry the traced texture past the hand-off distance.
+  vec4 nA = nz(vec3(P / (5.0 * S) * 0.1, 0.23), rate / (5.0 * S) * 0.1);
+  vec4 nB = nz(vec3(P / (18.0 * S) * 0.1, 0.41), rate / (18.0 * S) * 0.1);
+  float gust = grassGust(vec2(dot(P, gWind), dot(P, vec2(gWind.y, -gWind.x))), uTime.y * uSurfC.z);
+  vec2 q = vec2(dot(P, vec2(-dh.y, dh.x)) / (1.2 * gCell.y), dot(P, dh) / max(0.6 * H * cot, 0.05));
+  float streak = mix(valueNoise(q) + 0.5 * valueNoise(q * vec2(2.3, 1.0) + 9.1) - 0.75, 0.0, smoothstep(0.3, 1.0, rate / (1.2 * gCell.y)));
+  col *= (0.88 + 0.24 * nA.r) * (0.92 + 0.16 * nB.g) * (1.0 + 0.1 * uSurfA.a * gust) * (1.0 + 0.7 * streak);
+  if (gWheat) {
+    float rows = cos(TAU * dot(P, vec2(gWind.y, -gWind.x)) / gCell.y);
+    return col * (1.0 + 0.12 * rows * (1.0 - smoothstep(0.25, 0.8, rate / gCell.y)));
+  }
+  return mix(col, col * vec3(1.25, 1.0, 0.55), smoothstep(0.55, 0.8, nB.a) * uGrassB.x);
+}
+
+// Premultiplied grass radiance (rgb) and coverage (a) along the ray between t0 and t1; tEnd is
+// how far the traversal got before running out of steps.
+vec4 grassTrace(vec3 d, float t0, float t1, float tFade, float fp, vec3 amb, out float tEnd) {
+  vec2 wp = vec2(gWind.y, -gWind.x);
+  vec3 rd = vec3(dot(d.xz, gWind), dot(d.xz, wp), d.y);
+  vec2 dg = rd.xy / gCell, g0 = (rd.xy * t0 + gOff) / gCell;
+  ivec2 c = ivec2(floor(g0));
+  vec2 sg = vec2(dg.x >= 0.0 ? 1.0 : -1.0, dg.y >= 0.0 ? 1.0 : -1.0);
+  vec2 dgs = sg * max(abs(dg), vec2(1e-9));
+  vec2 tNext = t0 + (vec2(c) + max(sg, 0.0) - g0) / dgs, tDelta = 1.0 / abs(dgs);
+  float tc0 = t0, T = 1.0, time = uTime.y * uSurfC.z, pw0 = 0.75 * fp;
+  vec3 acc = vec3(0.0);
+  tEnd = t0;
+  for (int s = 0; s < 128; s++) {
+    float tc1 = min(min(tNext.x, tNext.y), t1);
+    tEnd = tc1;
+    float best = tc1, by = 0.0, bs = 0.0, ba = 0.0;
+    Blade bb;
+    for (int q = 0; q < 2; q++)
+      for (int k = 0; k < GRASS_K; k++) {
+        Blade b = grassBlade(c - ivec2(q, 0), k, time);
+        float th, yh, sd;
+        float a = bladeHit(b, rd, tc0, best, pw0, th, yh, sd);
+        if (a > 0.0) { best = th; by = yh; bs = sd; ba = a; bb = b; }
+      }
+    if (ba > 0.0) {
+      ba *= 1.0 - smoothstep(0.6 * tFade, tFade, best);
+      acc += T * ba * shadeBlade(bb, d, best, by, bs, amb);
+      T *= 1.0 - ba;
+      if (T < 0.03) break;
+      tc0 = best + 1e-4;
+      continue;
+    }
+    if (tc1 >= t1) break;
+    if (tNext.x < tNext.y) { c.x += int(sg.x); tc0 = tNext.x; tNext.x += tDelta.x; }
+    else { c.y += int(sg.y); tc0 = tNext.y; tNext.y += tDelta.y; }
+  }
+  return vec4(acc, 1.0 - T);
+}
+
+void grassSetup() {
+  vec2 wind = vec2(sin(uSurfC.x), cos(uSurfC.x));
+  float n = uGrass.y * 600.0;
+  gWheat = int(uSurf.x) == 4;
+  if (gWheat) {
+    // Crop rows: u runs along the rows (pointing downwind) and v across, one row per cell.
+    vec2 row = vec2(sin(uSurfC.w), cos(uSurfC.w));
+    gWind = dot(row, wind) < 0.0 ? -row : row;
+    gLean = normalize(vec2(dot(wind, gWind), dot(wind, vec2(gWind.y, -gWind.x))) + vec2(0.4, 0.0));
+    gCell = vec2(float(GRASS_K) / (n * 0.17), 0.17);
+    gOff = vec2(0.0, 0.5 * gCell.y); // stand in a row, not in a gap
+  } else {
+    gWind = wind;
+    gLean = vec2(1.0, 0.0);
+    gOff = vec2(0.0);
+    gCell.x = clamp(0.5 * uGrass.x, 0.03, 0.5);
+    gCell.y = clamp(float(GRASS_K) / (n * gCell.x), 0.015, 0.3);
+  }
+  gSigma = n * uGrass.z * 0.32;
+  gSunE = uSunScale * transmittance(OBS, uSunDir.y);
+  gMoonE = uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0));
+}
+
+vec3 shadeGrass(vec3 d, float Dm, float fp, float jitter, vec3 amb) {
+  grassSetup();
+  float E = uSurf.y, H = uGrass.x;
+  float t0 = E > 1.3 * H ? (E - 1.3 * H) / -d.y : 0.0;
+  // Trace blades until they shrink to a fraction of a pixel or the footprint nears a cell width;
+  // the hand-off distance is dithered per pixel so it never forms a line.
+  float tRes = min(uGrass.z * 10.0, 0.8 * gCell.y) / (0.75 * fp) * (0.75 + 0.5 * jitter) * uGrassB.z;
+  vec4 g = vec4(0.0);
+  float tEnd = t0;
+  if (t0 < tRes) g = grassTrace(d, t0, min(Dm, tRes), tRes, fp, amb, tEnd);
+  float tc = clamp(max(t0, tEnd), 0.7 * tRes, Dm);
+  vec3 rest = tEnd >= Dm - 1e-3 ? grassGround(d.xz * Dm, fp * Dm * inversesqrt(max(-d.y, 0.02)), amb)
+                                : grassCanopy(d, d.xz * tc, fp * tc * inversesqrt(max(-d.y, 0.02)), amb);
+  return g.rgb + (1.0 - g.a) * rest;
+}
+
 // ── Ground surfaces ──
 
 vec4 surfaceAt(vec2 P, float rate, vec3 d, float Dm, out vec3 n) {
@@ -1545,21 +1845,7 @@ vec4 surfaceAt(vec2 P, float rate, vec3 d, float Dm, out vec3 n) {
   n = vec3(0.0, 1.0, 0.0);
   vec3 albedo = A;
   float refl = 0.0;
-  if (type == 3 || type == 4) {
-    float pat = nz(vec3(P / (45.0 * S) * 0.1, 0.13), rate / (45.0 * S) * 0.1).r;
-    float fine = mix(nz(vec3(P / (0.9 * S) * 0.1, 0.29), rate / (0.9 * S) * 0.1).r, 0.5, smoothstep(0.1, 0.6, rate / (0.9 * S)));
-    vec2 gq = (P - wdir * t * 4.0 * uSurfC.z) / (30.0 * S) * 0.1;
-    float gust = nz(vec3(gq, t * 0.01), rate / (30.0 * S) * 0.1).a;
-    albedo = mix(A, B, smoothstep(0.32, 0.68, pat)) * (0.78 + 0.44 * fine);
-    if (type == 4) {
-      float sp = 0.75 * S;
-      float rows = 0.5 + 0.5 * sin(dot(P, vec2(cos(uSurfC.w), sin(uSurfC.w))) * TAU / sp);
-      float rf = 1.0 - smoothstep(0.15, 0.45, rate / sp);
-      float heads = nz(vec3(P / (0.25 * S) * 0.1, 0.53), rate / (0.25 * S) * 0.1).g;
-      albedo *= mix(0.9, 0.78 + 0.22 * rows + 0.3 * (heads - 0.35), rf);
-    }
-    albedo *= 1.0 + uSurfA.a * 0.55 * (gust - 0.5);
-  } else if (type == 5) {
+  if (type == 5) {
     vec2 g = noiseGrad(vec3(P / (140.0 * S) * 0.1, 0.57), rate / (140.0 * S) * 0.1, 3) * 0.1 / (140.0 * S) * 60.0;
     vec2 rd = wdir;
     float rw = 0.35 * S;
@@ -1648,6 +1934,9 @@ const SCENE_UNIFORMS = [
   ['uSurfA', 'vec4', () => [...hexLinear(P.surfColorA), P.surfWaves]],
   ['uSurfB', 'vec4', () => [...hexLinear(P.surfColorB), P.surfReflect]],
   ['uSurfC', 'vec4', () => [P.surfWind * DEG, P.surfSparkle, P.surfMotion, P.surfRows * DEG]],
+  ['uGrass', 'vec4', () => [P.grassHeight, P.grassDensity, P.grassWidth * 0.006, P.grassLean]],
+  ['uGrassB', 'vec4', () => [P.grassDry, P.flowers, window.DBG_T ?? 1, 0]],
+  ['uFlower', 'vec3', () => hexLinear(P.flowerColor)],
   ['uWave', 'vec4', () => D.waves, 32],
   ['uWaveFx', 'vec3', () => D.waveFx],
   ['uLand', 'vec4', () => [P.land, P.landHeight, P.landRough, P.landLayers]],
@@ -1833,11 +2122,24 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
   vec3 amb = skyAmbient();
   float Dm = d.y < 0.0 ? uSurf.y / -d.y : 1e9;
   bool ground = d.y < 0.0 && (uLand.x < 0.5 || Dm < LAND_DIST[0] * uLandB.x * 1000.0);
-  if (!ground) return viewRadiance(d, fp, fpOut, jitter, amb);
-  float rate = fp * Dm * inversesqrt(max(-d.y, 0.02));
   int type = int(uSurf.x);
+  if (!ground) {
+    vec3 sky = viewRadiance(d, fp, fpOut, jitter, amb);
+    if ((type == 3 || type == 4) && uSurf.y < 1.3 * uGrass.x) {
+      // Eye inside the canopy: blades stand against the sky.
+      grassSetup();
+      float tTop = d.y > 1e-4 ? (1.3 * uGrass.x - uSurf.y) / d.y : 1e4;
+      float tRes = min(uGrass.z * 10.0, 0.8 * gCell.y) / (0.75 * fp), tEnd;
+      vec4 g = grassTrace(d, 0.0, min(tTop, tRes), tRes, fp, amb, tEnd);
+      vec3 rest = tTop <= tEnd + 1e-3 ? sky : grassCanopy(normalize(vec3(d.x, -0.03, d.z)), d.xz * tEnd, fp * tEnd * 6.0, amb);
+      return g.rgb + (1.0 - g.a) * rest;
+    }
+    return sky;
+  }
+  float rate = fp * Dm * inversesqrt(max(-d.y, 0.02));
   vec3 col;
   if (type == 1 || type == 2) col = shadeWater(d, Dm, rate, fp, fpOut, jitter, amb);
+  else if (type == 3 || type == 4) col = shadeGrass(d, Dm, fp, jitter, amb);
   else {
     vec3 n;
     vec4 s = surfaceAt(d.xz * Dm, rate, d, Dm, n);
@@ -1924,12 +2226,6 @@ vec3 grade(vec3 lin, vec2 img) {
   vec2 n = (img - 0.5 * uImg) / (0.5 * length(uImg));
   c *= 1.0 - uLens.x * smoothstep(0.3, 1.15, length(n));
   return clamp(c, 0.0, 1.0);
-}
-
-float valueNoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
 }
 
 vec3 addGrain(vec3 c, vec2 img) {
@@ -2703,6 +2999,7 @@ const km = v => v.toFixed(2) + ' km';
 const resolveKey = key => key.replace('#', cloudSel);
 const layerOn = () => P[resolveKey('c#On')];
 const deg = v => v.toFixed(0) + '°';
+const grassy = () => P.surface === 3 || P.surface === 4;
 const pct = v => Math.round(v * 100) + '%';
 const signed = d => v => (v > 0 ? '+' : '') + v.toFixed(d);
 
@@ -2869,10 +3166,16 @@ const TABS = [
       { key: 'surfWaves', label: 'Waves & Wind', min: 0, max: 3, step: 0.01, fmt: fmt(2) },
       { key: 'surfReflect', label: 'Reflection', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.surface === 1 || P.surface === 2 },
       { key: 'surfFoam', label: 'Whitecaps', min: 0, max: 1.5, step: 0.01, fmt: fmt(2), when: () => P.surface === 1 },
+      { key: 'grassHeight', label: 'Grass Height', min: 0.05, max: 1.5, step: 0.01, fmt: v => v.toFixed(2) + ' m', when: grassy },
+      { key: 'grassDensity', label: 'Density', min: 0.3, max: 2, step: 0.01, fmt: v => v.toFixed(2) + '×', when: grassy },
+      { key: 'grassWidth', label: 'Blade Width', min: 0.4, max: 3, step: 0.01, fmt: v => v.toFixed(2) + '×', when: grassy },
+      { key: 'grassLean', label: 'Bend', min: 0, max: 1, step: 0.01, fmt: fmt(2), when: grassy },
+      { key: 'grassDry', label: 'Dry Blades', min: 0, max: 1, step: 0.01, fmt: pct, when: grassy },
+      { key: 'flowers', label: 'Wildflowers', color: 'flowerColor', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.surface === 3 },
       { key: 'surfWind', label: 'Wind Direction', min: 0, max: 360, step: 1, fmt: deg },
       { key: 'surfRows', label: 'Row Angle', min: 0, max: 180, step: 0.5, fmt: deg, when: () => P.surface === 4 },
       { key: 'surfSparkle', label: 'Sparkle', min: 0, max: 2, step: 0.01, fmt: fmt(2), when: () => P.surface === 6 },
-      { key: 'eyeHeight', label: 'Eye Height', min: 0.5, max: 300, step: 0.5, fmt: v => v.toFixed(1) + ' m' },
+      { key: 'eyeHeight', label: 'Eye Height', min: 0.1, max: 300, step: 0.05, fmt: v => v.toFixed(2) + ' m' },
     ]],
     ['Landscape', [
       { key: 'land', label: 'Horizon', type: 'choice', cols: 3, options: LANDS.map(([title], i) => ({ value: i, title })),
