@@ -305,6 +305,7 @@ const DEFAULTS = {
   surface: 1, eyeHeight: 2, surfScale: 1, surfColorA: '#0a1820', surfColorB: '#1f5a4e', surfWaves: 0.35, surfReflect: 1,
   surfWind: 60, surfSparkle: 0.5, surfMotion: 1, surfRows: 65, surfFoam: 0.5,
   grassHeight: 0.45, grassDensity: 1, grassWidth: 1, grassLean: 0.5, grassDry: 0.15, flowers: 0, flowerColor: '#f4e7a1',
+  relief: 1,
   trees: 0, treeType: 0, treeHeight: 14, treeNear: 30, treeFar: 140, treeHeading: 200, treeSpread: 70, treeSeed: 1,
   treeColor: '#3d5a24', treeAutumn: 0, treeFoliage: 1, treeWidth: 1,
   land: 0, landHeight: 3, landRough: 0.5, landLayers: 3, landDepth: 1, landHeading: 0, landSeed: 1,
@@ -354,9 +355,9 @@ const SURFACES = [
   ['Salt Flat', 2, { surfColorA: '#ebe8e3', surfColorB: '#b6aea3', surfReflect: 0.85, surfWaves: 0.12, surfScale: 1 }],
   ['Grass', 3, { surfColorA: '#2f4a1a', surfColorB: '#8a9a3a', surfReflect: 0, surfWaves: 0.6, surfScale: 1, grassHeight: 0.45, grassWidth: 1, grassLean: 0.5 }],
   ['Wheat', 4, { surfColorA: '#b08a45', surfColorB: '#e0bd6e', surfReflect: 0, surfWaves: 0.8, surfScale: 1, grassHeight: 0.9, grassWidth: 0.7, grassLean: 0.15 }],
-  ['Desert', 5, { surfColorA: '#cf9a62', surfColorB: '#a86d3e', surfReflect: 0, surfWaves: 0.7, surfScale: 1 }],
-  ['Snow', 6, { surfColorA: '#eef2fa', surfColorB: '#cad6ea', surfReflect: 0, surfWaves: 0.5, surfScale: 1, surfSparkle: 0.6 }],
-  ['Rock', 7, { surfColorA: '#4b4743', surfColorB: '#2b2927', surfReflect: 0, surfWaves: 0.5, surfScale: 1 }],
+  ['Desert', 5, { surfColorA: '#d9a46a', surfColorB: '#a8693a', surfReflect: 0, surfWaves: 0.7, surfScale: 1, relief: 1 }],
+  ['Snow', 6, { surfColorA: '#eef2fa', surfColorB: '#cad6ea', surfReflect: 0, surfWaves: 0.5, surfScale: 1, surfSparkle: 0.6, relief: 0.7 }],
+  ['Rock', 7, { surfColorA: '#4b4743', surfColorB: '#2b2927', surfReflect: 0, surfWaves: 0.5, surfScale: 1, relief: 0.8 }],
 ];
 
 const LANDS = [['None', 0], ['Hills', 2.5], ['Mountains', 5], ['Forest', 1.2], ['City', 2]];
@@ -571,7 +572,6 @@ function renderThumb(look, cv) {
   cv.getContext('2d').putImageData(img, 0, 0);
   Object.assign(P, JSON.parse(savedP));
   ANIM.cloud = savedCloud;
-  invalidate();
 }
 
 // ─── Capture Settings ───────────────────────────────────────────────────────
@@ -1191,7 +1191,7 @@ vec2 cloudShape(int i, vec2 xz, float rate) {
   if (B.y > 0.0) base = mix(base, nz(vec3(r * 0.5, m) + o.zxy, 0.5 * rate).g * 0.6 + n1 * 0.4, B.y);
   if (B.z > 0.0) base = mix(base, base * 0.45 + nz(vec3(r * 2.2, m * 1.5) + o, 2.2 * rate).b * 0.75 - 0.08, B.z);
   float cov = uCloudA[i].x + (big - 0.5) * 0.7;
-  return vec2(remap(base, 1.0 - cov, 1.0 - cov + 0.12 + 0.4 * Cc.y), remap(base, 1.0 - cov - 0.04, 1.0 - cov + 0.7) * (0.55 + 0.45 * big));
+  return vec2(remap(base, 1.0 - cov, 1.0 - cov + 0.08 + 0.42 * Cc.y), remap(base, 1.0 - cov - 0.04, 1.0 - cov + 0.7) * (0.55 + 0.45 * big));
 }
 
 float cloudDensity(int i, vec3 pw, float hf, float rate, bool detailed) {
@@ -2165,42 +2165,134 @@ float treeShadow(vec3 p) {
 
 // ── Ground surfaces ──
 
-vec4 surfaceAt(vec2 P, float rate, vec3 d, float Dm, out vec3 n) {
+// Plain ground: a dark, faintly mottled floor for silhouette scenes.
+vec3 plainGround(vec2 P, float rate) {
+  float S = uSurf.z;
+  return mix(uSurfA.rgb, uSurfB.rgb, nz(vec3(P / (6.0 * S) * 0.1, 0.43), rate / (6.0 * S) * 0.1).r);
+}
+
+// ── Terrain: dunes, snow drifts, rocky ground ──
+
+// Height (m) above the base plane. Dunes are transverse ridges with a gentle windward slope and a
+// steep slip face whose crests meander; snow lies in soft drifts; rock is broken ground.
+float gDunePhase = 0.0;
+
+float terrainH(vec2 p, float rate) {
   int type = int(uSurf.x);
-  float S = uSurf.z, t = uTime.y;
-  vec3 A = uSurfA.rgb, B = uSurfB.rgb;
-  vec2 wdir = vec2(sin(uSurfC.x), cos(uSurfC.x));
-  n = vec3(0.0, 1.0, 0.0);
-  vec3 albedo = A;
-  float refl = 0.0;
+  float S = uSurf.z, A = uTerrain.x;
+  vec2 wd = vec2(sin(uSurfC.x), cos(uSurfC.x));
+  vec2 q = vec2(dot(p, wd), dot(p, vec2(wd.y, -wd.x)));
   if (type == 5) {
-    vec2 g = noiseGrad(vec3(P / (140.0 * S) * 0.1, 0.57), rate / (140.0 * S) * 0.1, 3) * 0.1 / (140.0 * S) * 60.0;
-    vec2 rd = wdir;
-    float rw = 0.35 * S;
-    float warp = nz(vec3(P / (8.0 * S) * 0.1, 0.81), rate / (8.0 * S) * 0.1).r;
-    float ph = dot(P, rd) / rw + warp * 6.0;
-    float rf = (1.0 - smoothstep(0.15, 0.5, rate / rw)) * uSurfA.a;
-    g += rd * cos(ph * TAU) * 0.22 * rf;
-    n = normalize(vec3(-g.x, 1.0, -g.y));
-    albedo = mix(A, B, smoothstep(0.35, 0.75, nz(vec3(P / (25.0 * S) * 0.1, 0.15), rate / (25.0 * S) * 0.1).r));
-  } else if (type == 6) {
-    vec2 g = noiseGrad(vec3(P / (6.0 * S) * 0.1 * vec2(1.0, 3.0), 0.47), rate / (6.0 * S) * 0.3, 3) * uSurfA.a * 0.12;
-    n = normalize(vec3(-g.x, 1.0, -g.y));
-    albedo = mix(A, B, 0.3 * nz(vec3(P / (30.0 * S) * 0.1, 0.61), rate / (30.0 * S) * 0.1).r);
-    float cell = max(rate * 2.5, 0.02);
-    vec2 ci = floor(P / cell);
-    uint hh = hash3u(uvec3(uvec2(ivec2(ci) + 1000000), 7u));
-    vec3 nf = normalize(vec3(rnd(hh) - 0.5, 1.6, rnd(hh) - 0.5));
-    float glint = pow(max(dot(reflect(d, nf), uSunDir), 0.0), 900.0) * step(0.7, rnd(hh)) * uSurfC.y;
-    albedo += vec3(glint * 40.0);
-  } else if (type == 7) {
-    float n1 = nz(vec3(P / (20.0 * S) * 0.1, 0.27), rate / (20.0 * S) * 0.1).r;
-    float crack = pow(1.0 - abs(nz(vec3(P / (6.0 * S) * 0.1, 0.39), rate / (6.0 * S) * 0.1).a * 2.0 - 1.0), 10.0);
-    albedo = mix(A, B, smoothstep(0.3, 0.7, n1)) * (1.0 - 0.45 * crack * (1.0 - smoothstep(0.05, 0.3, rate / (6.0 * S))));
-    vec2 g = noiseGrad(vec3(P / (4.0 * S) * 0.1, 0.91), rate / (4.0 * S) * 0.1, 0) * 0.05 * uSurfA.a;
-    n = normalize(vec3(-g.x, 1.0, -g.y));
+    float lam = 110.0 * S;
+    vec4 w1 = nz(vec3(q * vec2(1.0, 0.55) / (lam * 4.0) * 0.1, 0.11), rate / (lam * 4.0) * 0.1);
+    vec4 w2 = nz(vec3(q / lam * 0.1, 0.23), rate / lam * 0.1);
+    float f = fract(q.x / lam + (w1.r - 0.5) * 3.2 + (w2.r - 0.5) * 0.5 + gDunePhase);
+    float prof = f < 0.78 ? sin(f / 0.78 * PI * 0.5) : 1.0 - pow((f - 0.78) / 0.22, 0.85);
+    prof = mix(prof, 0.6, smoothstep(0.08, 0.45, rate / lam));
+    float small = (w2.a - 0.5) * 4.0 * (1.0 - smoothstep(0.3, 1.0, rate / (lam * 0.25)));
+    return (prof * (0.45 + 0.8 * w1.g) * 13.0 + small) * A * S;
   }
-  return vec4(albedo, refl);
+  vec4 n1 = nz(vec3(p / (60.0 * S) * 0.1, 0.37), rate / (60.0 * S) * 0.1);
+  vec4 n2 = nz(vec3(q * vec2(0.6, 1.0) / (14.0 * S) * 0.1, 0.59), rate / (14.0 * S) * 0.1);
+  if (type == 6) return ((n1.r - 0.5) * 3.0 + (n2.r - 0.5) * 0.9) * A * S;
+  return ((n1.r - 0.5) * 2.4 + (n2.a - 0.5) * 1.6 + pow(n2.g, 3.0) * 1.8) * A * S;
+}
+
+float gH0;
+
+// First intersection of the view ray with the terrain (eye at the origin, uSurf.y above the local
+// ground), or -1 if it escapes past the march range.
+float terrainTrace(vec3 d, float fp) {
+  float E = uSurf.y, top = 22.0 * uTerrain.x * uSurf.z + 1.0;
+  if (int(uSurf.x) == 5) {
+    // Stand just upwind of a crest so the view runs out over the dune field.
+    float lam = 110.0 * uSurf.z;
+    float w1 = nz(vec3(0.0, 0.0, 0.11), 0.0).r, w2 = nz(vec3(0.0, 0.0, 0.23), 0.0).r;
+    gDunePhase = 0.7 - fract((w1 - 0.5) * 3.2 + (w2 - 0.5) * 0.5);
+  }
+  gH0 = terrainH(vec2(0.0), 0.0);
+  float t = 0.0, tPrev = 0.0, gapPrev = E;
+  for (int i = 0; i < 110; i++) {
+    vec3 p = d * t;
+    float gap = p.y + E + gH0 - terrainH(p.xz, fp * t);
+    if (gap < 0.0) {
+      // Refine between the last point above ground and this one.
+      for (int k = 0; k < 5; k++) {
+        float tm = mix(tPrev, t, gapPrev / max(gapPrev - gap, 1e-5));
+        vec3 pm = d * tm;
+        float gm = pm.y + E + gH0 - terrainH(pm.xz, fp * tm);
+        if (gm < 0.0) { t = tm; gap = gm; } else { tPrev = tm; gapPrev = gm; }
+      }
+      return t;
+    }
+    if (d.y > 0.0 && p.y + E > top) return -1.0;
+    tPrev = t;
+    gapPrev = gap;
+    t += max(gap * 0.55, 0.04 + t * 0.012);
+    if (t > 6000.0) break;
+  }
+  return -1.0;
+}
+
+// Soft shadow from the terrain itself toward the sun.
+float terrainShadow(vec3 p, float rate) {
+  float E = uSurf.y, res = 1.0, t = 0.5 + rate;
+  for (int i = 0; i < 22; i++) {
+    vec3 q = p + uSunDir * t;
+    float gap = q.y + E + gH0 - terrainH(q.xz, max(rate, 0.002 * t));
+    res = min(res, 10.0 * gap / t);
+    if (res < 0.0) break;
+    t *= 1.38;
+  }
+  return clamp(res, 0.0, 1.0);
+}
+
+vec3 terrainShade(vec3 d, float t, float fp, vec3 amb) {
+  int type = int(uSurf.x);
+  float S = uSurf.z, rate = fp * t * inversesqrt(max(abs(d.y), 0.03));
+  vec3 p = d * t;
+  vec2 P = p.xz;
+  float e = max(0.2, rate);
+  float h = terrainH(P, rate);
+  vec3 n = normalize(vec3(h - terrainH(P + vec2(e, 0.0), rate), e, h - terrainH(P + vec2(0.0, e), rate)));
+  vec2 wd = vec2(sin(uSurfC.x), cos(uSurfC.x));
+  vec2 q = vec2(dot(P, wd), dot(P, vec2(wd.y, -wd.x)));
+  vec3 A = uSurfA.rgb, B = uSurfB.rgb;
+  vec3 alb;
+  float rough = 1.0;
+  if (type == 5) {
+    // Wind ripples run across the wind; sand shades from crest to trough.
+    float warp = nz(vec3(P / (6.0 * S) * 0.1, 0.81), rate / (6.0 * S) * 0.1).r;
+    float rw = 0.22 * S, fade = (1.0 - smoothstep(0.15, 0.5, rate / rw)) * uSurfA.a;
+    vec2 g = wd * cos((q.x / rw + warp * 7.0) * TAU) * 0.25 * fade;
+    n = normalize(n + vec3(-g.x, 0.0, -g.y));
+    alb = mix(B, A, smoothstep(-2.0, 6.0, h / max(uTerrain.x * S, 0.05)) * 0.8 + 0.2 * nz(vec3(P / (25.0 * S) * 0.1, 0.15), rate / (25.0 * S) * 0.1).r);
+  } else if (type == 6) {
+    // Sastrugi: wind-carved ridges along the wind, and glints from individual crystals.
+    vec2 g = noiseGrad(vec3(q * vec2(0.35, 1.0) / (2.0 * S) * 0.1, 0.47), rate / (2.0 * S) * 0.1, 3) * uSurfA.a * 0.045;
+    n = normalize(n + vec3(-(g.x * wd.x + g.y * wd.y), 0.0, -(g.x * wd.y - g.y * wd.x)));
+    alb = mix(A, B, 0.25 * nz(vec3(P / (30.0 * S) * 0.1, 0.61), rate / (30.0 * S) * 0.1).r);
+  } else {
+    float n1 = nz(vec3(P / (8.0 * S) * 0.1, 0.27), rate / (8.0 * S) * 0.1).r;
+    float crack = pow(1.0 - abs(nz(vec3(P / (3.0 * S) * 0.1, 0.39), rate / (3.0 * S) * 0.1).a * 2.0 - 1.0), 10.0);
+    alb = mix(A, B, smoothstep(0.3, 0.7, n1)) * (1.0 - 0.45 * crack * (1.0 - smoothstep(0.05, 0.3, rate / (3.0 * S))));
+    vec2 g = noiseGrad(vec3(P / (1.5 * S) * 0.1, 0.91), rate / (1.5 * S) * 0.1, 0) * 0.04 * uSurfA.a;
+    n = normalize(n + vec3(-g.x, 0.0, -g.y));
+  }
+  float sh = terrainShadow(p + n * (0.3 + 2.0 * rate), rate) * gShade;
+  vec3 sunE = uSunScale * transmittance(OBS, uSunDir.y);
+  vec3 col = alb * (sunE * max(dot(n, uSunDir), 0.0) * sh / PI + amb * (0.55 + 0.45 * n.y));
+  if (uMoonScale > 0.0) col += alb * uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0)) * max(dot(n, uMoonDir), 0.0) / PI;
+  if (type == 6 && uSurfC.y > 0.0) {
+    // Sparkle: a few crystal facets per footprint catch the sun or moon.
+    float cell = max(rate * 2.0, 0.015);
+    uint hh = hash3u(uvec3(uvec2(ivec2(floor(P / cell)) + 1000000), 7u));
+    vec3 nf = normalize(n * 1.6 + vec3(rnd(hh) - 0.5, 0.0, rnd(hh) - 0.5));
+    vec3 L = uSunDir.y > -0.05 ? uSunDir : uMoonDir;
+    vec3 E2 = uSunDir.y > -0.05 ? sunE : vec3(uMoonScale) * 30.0;
+    col += E2 * pow(max(dot(reflect(d, nf), L), 0.0), 600.0) * step(0.75, rnd(hh)) * uSurfC.y * 25.0 * sh;
+  }
+  return col;
 }
 
 // ── Aurora ──
@@ -2263,7 +2355,8 @@ const SCENE_UNIFORMS = [
   ['uSurfB', 'vec4', () => [...hexLinear(P.surfColorB), P.surfReflect]],
   ['uSurfC', 'vec4', () => [P.surfWind * DEG, P.surfSparkle, P.surfMotion, P.surfRows * DEG]],
   ['uGrass', 'vec4', () => [P.grassHeight, P.grassDensity, P.grassWidth * 0.006, P.grassLean]],
-  ['uGrassB', 'vec4', () => [P.grassDry, P.flowers, window.DBG_T ?? 1, 0]],
+  ['uGrassB', 'vec4', () => [P.grassDry, P.flowers, 0, 0]],
+  ['uTerrain', 'vec4', () => [P.relief, 0, 0, 0]],
   ['uFlower', 'vec3', () => hexLinear(P.flowerColor)],
   ['uTree', 'vec4', () => D.trees, 16],
   ['uTreeN', 'int', () => D.treeN],
@@ -2340,7 +2433,7 @@ uniform sampler2D uTrans, uSkySun, uSkyMoon;
 uniform highp sampler3D uNoise3;
 uniform vec2 uPix0;
 uniform float uPixStep, uTargetH, uSnap, uQuality;
-uniform int uSamples;
+uniform int uSamples, uFrame;
 out vec4 outColor;
 ${GLSL_COMMON}
 ${GLSL_ATMO}
@@ -2465,8 +2558,15 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
   int type = int(uSurf.x);
   bool grassy = type == 3 || type == 4, water = type == 1 || type == 2;
   float E = uSurf.y, H = uGrass.x;
+  bool terrain = type >= 5;
   float Dm = d.y < 0.0 ? E / -d.y : 1e9;
-  bool ground = d.y < 0.0 && (uLand.x < 0.5 || Dm < LAND_DIST[0] * uLandB.x * 1000.0);
+  if (terrain) {
+    float tt = terrainTrace(d, fp);
+    // Rays that outrun the march below the horizon meet the far, flattened dune sea.
+    Dm = tt > 0.0 ? tt : d.y < 0.0 ? max((E + gH0) / -d.y, 6000.0) : -1.0;
+  }
+  bool ground = (terrain ? Dm > 0.0 : d.y < 0.0) && (uLand.x < 0.5 || Dm < LAND_DIST[0] * uLandB.x * 1000.0);
+  if (!ground) Dm = 1e9;
   float rate = fp * Dm * inversesqrt(max(-d.y, 0.02));
   if (grassy) grassSetup();
   float tTop = d.y < 0.0 && E > 1.3 * H ? (E - 1.3 * H) / -d.y : 0.0;
@@ -2485,7 +2585,7 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
     float tEnd = tTop, t1 = 0.0, tRes = 0.0;
     if (inGrass) {
       t1 = ground ? Dm : (d.y > 1e-4 ? (1.3 * H - E) / d.y : 1e4);
-      tRes = min(uGrass.z * 10.0, 0.8 * gCell.y) / (0.75 * fp) * (0.75 + 0.5 * jitter) * uGrassB.z;
+      tRes = min(uGrass.z * 10.0, 0.8 * gCell.y) / (0.75 * fp) * (0.75 + 0.5 * jitter);
       if (tTop < min(tRes, tTree)) {
         vec4 g = grassTrace(d, tTop, min(min(t1, tRes), tTree), tRes, fp, amb, tEnd);
         acc += g.rgb;
@@ -2528,9 +2628,7 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
       continue;
     }
     if (hit) {
-      vec3 n;
-      vec4 s = surfaceAt(d.xz * Dm, rate, d, Dm, n);
-      acc += T * s.rgb * (directLight(n) * gShade + amb);
+      acc += T * (terrain ? terrainShade(d, Dm, fp, amb) : plainGround(d.xz * Dm, rate) * (directLight(vec3(0.0, 1.0, 0.0)) * gShade + amb));
       break;
     }
     acc += T * viewRadiance(rd, fp, fpOut, jitter, amb);
@@ -2646,11 +2744,14 @@ void main() {
   if (uSnap > 0.5) img = floor(img) + 0.5;
   float px = max(uPixStep, 1.0);
   vec3 c = vec3(0.0);
+  // Sample k of a progressive sequence (uFrame frames of uSamples each): R2 sub-pixel offsets and
+  // a golden-ratio step of the per-pixel march jitter, so accumulated frames converge.
   for (int i = 0; i < 16; i++) {
     if (i >= uSamples) break;
-    vec2 j = uSamples > 1 ? fract(vec2(0.7548777, 0.5698403) * float(i) + 0.5) - 0.5 : vec2(0.0);
+    int k = uFrame * uSamples + i;
+    vec2 j = k > 0 ? fract(vec2(0.7548777, 0.5698403) * float(k) + 0.5) - 0.5 : vec2(0.0);
     vec2 q = floor(img / px);
-    c += shadePixel(img + j * px, fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715))) + float(i) * 0.618034));
+    c += shadePixel(img + j * px, fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715))) + float(k) * 0.618034));
   }
   c = addGrain(c / float(uSamples), img);
   vec2 dp = floor(uPix0 / max(uPixStep, 1e-6)) + floor(fc);
@@ -2969,6 +3070,7 @@ function drawSky(fbo, w, h, pix0, step, values, opts = {}) {
   gl.uniform1f(sky.u.uTargetH, h);
   gl.uniform1f(sky.u.uSnap, opts.snap ? 1 : 0);
   gl.uniform1i(sky.u.uSamples, opts.samples || 1);
+  gl.uniform1i(sky.u.uFrame, opts.frame || 0);
   gl.uniform1f(sky.u.uQuality, (opts.quality ?? 1) * P.cQuality);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
@@ -3045,11 +3147,20 @@ function elapsedLabel() {
 
 const VIEW = Object.assign({ scale: 1 }, store('horizon-view'));
 const LOW = 0.45;
-let needLow = true, needFull = true, lastChange = 0, lowTarget = null;
+const REFINE = 12; // frames averaged once the view holds still
+let needLow = true, needFull = true, lastChange = 0, lowTarget = null, accTarget = null, accN = 0;
 let renderMs = 0;
+
+const resolveProg = program(VS, `#version 300 es
+precision highp float;
+uniform sampler2D uAcc;
+uniform float uScale;
+out vec4 outColor;
+void main() { outColor = vec4(texelFetch(uAcc, ivec2(gl_FragCoord.xy), 0).rgb * uScale, 1.0); }`, { uAcc: 0 });
 
 function invalidate() {
   needLow = needFull = true;
+  accN = 0;
   lastChange = performance.now();
 }
 
@@ -3089,6 +3200,29 @@ function renderView(scale = 1, quality = 1) {
     const m = viewMapping(canvas.width);
     drawSky(null, canvas.width, canvas.height, m.pix0, m.step, values, { quality });
   }
+  accN = 0;
+  renderMs = performance.now() - t0;
+}
+
+// Progressive refinement: frame k adds a sample with new sub-pixel and march offsets to a float
+// buffer, and the canvas shows the running average.
+function refineView(k) {
+  const w = canvas.width, h = canvas.height, m = viewMapping(w), t0 = performance.now();
+  if (!accTarget || accTarget.w !== w || accTarget.h !== h) {
+    if (accTarget) accTarget.free();
+    accTarget = target(w, h, gl.RGBA16F);
+  }
+  if (k > 0) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
+  drawSky(accTarget.fbo, w, h, m.pix0, m.step, sceneValues(), { frame: k });
+  gl.disable(gl.BLEND);
+  accN = k + 1;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, w, h);
+  gl.useProgram(resolveProg.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, accTarget.tex);
+  gl.uniform1f(resolveProg.u.uScale, 1 / accN);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
   renderMs = performance.now() - t0;
 }
 
@@ -3580,6 +3714,7 @@ const TABS = [
       { key: 'surfScale', label: 'Texture Scale', min: 0.2, max: 5, step: 0.01, fmt: v => v.toFixed(2) + '×' },
       { key: 'surfWaves', label: 'Waves & Wind', min: 0, max: 3, step: 0.01, fmt: fmt(2) },
       { key: 'surfReflect', label: 'Reflection', min: 0, max: 1, step: 0.01, fmt: pct, when: () => P.surface === 1 || P.surface === 2 },
+      { key: 'relief', label: 'Relief', min: 0, max: 3, step: 0.01, fmt: v => v.toFixed(2) + '×', when: () => P.surface >= 5 },
       { key: 'surfFoam', label: 'Whitecaps', min: 0, max: 1.5, step: 0.01, fmt: fmt(2), when: () => P.surface === 1 },
       { key: 'grassHeight', label: 'Grass Height', min: 0.05, max: 1.5, step: 0.01, fmt: v => v.toFixed(2) + ' m', when: grassy },
       { key: 'grassDensity', label: 'Density', min: 0.3, max: 2, step: 0.01, fmt: v => v.toFixed(2) + '×', when: grassy },
@@ -4220,8 +4355,9 @@ function frame(now) {
     } else {
       const settling = now - lastChange < 150;
       if (needLow && settling) { renderView(LOW, 0.6); needLow = false; }
-      else if (needFull && !settling) { renderView(1, 1); needFull = needLow = false; }
+      else if (needFull && !settling) { refineView(0); needFull = needLow = false; }
       else if (thumbQueue.length && !settling) renderThumb(...thumbQueue.shift());
+      else if (accN > 0 && accN < REFINE && !settling) refineView(accN);
     }
     if (now - statT > 250) { statEl.textContent = renderMs.toFixed(1) + ' ms'; statT = now; }
   }
