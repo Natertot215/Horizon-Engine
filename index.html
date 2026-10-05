@@ -215,7 +215,7 @@ select option { background: #111; }
 <canvas id="loupe"></canvas>
 <aside id="panel"></aside>
 <button id="reopen" aria-label="Show controls (H)">
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1 3.5h12M1 10.5h12"/><circle cx="4.5" cy="3.5" r="1.6" fill="#000"/><circle cx="9.5" cy="10.5" r="1.6" fill="#000"/></svg>
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1 3.5h12M1 10.5h12"/><circle cx="4.5" cy="3.5" r="1.6" fill="#000"/><circle cx="9.5" cy="10.5" r="1.6" fill="#000"/></svg>
 </button>
 <div id="bar"></div>
 <div id="busy" class="modal"><div class="card">
@@ -238,7 +238,7 @@ select option { background: #111; }
   </a>
   <span>Created By Nathan Taichman</span>
 </footer>
-<div id="toast"></div>
+<div id="toast" role="status"></div>
 <pre id="err"></pre>
 
 <script>
@@ -577,8 +577,8 @@ const PRESETS = [
     ...cloudLayer(0, 'cumulus', { Cover: 0.28 }),
   } },
   { name: 'Alpine Lake', p: {
-    sunElev: 6, sunHeading: 70, heading: 205, pitch: 3, fov: 65,
-    surfWaves: 0.03, land: 2, landHeight: 9, landLayers: 3, landColor: '#5a524c', landSnow: 0.65, landDepth: 2.5, haze: 0.25,
+    sunElev: 9, sunHeading: 70, heading: 205, pitch: 3, fov: 65,
+    surfWaves: 0.03, land: 2, landHeight: 7.5, landLayers: 3, landColor: '#5a524c', landSnow: 0.65, landDepth: 3, haze: 0.25,
   } },
   { name: 'Twin Moons', p: {
     sunElev: -10, sunHeading: 260, heading: 230, pitch: 8, fov: 70,
@@ -588,8 +588,8 @@ const PRESETS = [
   } },
   { name: 'Galaxy Rise', p: {
     sunElev: -25, heading: 200, pitch: 18, fov: 85,
-    moon: true, moonPhase: 0.3, moonElev: 5, moonHeading: 290, moonLight: 3, moonGlow: 0.2,
-    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', surfScale: 1.4, relief: 1.5, eyeHeight: 6,
+    moon: true, moonPhase: 0.3, moonElev: 5, moonHeading: 290, moonLight: 3.5, moonGlow: 0.2,
+    surface: 5, surfColorA: '#d9a46a', surfColorB: '#a8693a', surfWind: 290, surfScale: 1.4, relief: 1.8, eyeHeight: 10,
     gal: 1.3, galSize: 45, galElev: 22, galHeading: 200, galIncl: 62, galAngle: 25, mw: 0.5, starSizeVar: 0.5,
   } },
   { name: 'Ocean Glitter', p: {
@@ -752,7 +752,7 @@ function layout() {
 }
 
 // Centre the bar under the frame, but keep it on screen and clear of the credit; in capture mode,
-// drop the timelapse controls when the capture controls alone need the room.
+// drop the timelapse controls, then the size readout, when space runs short.
 function placeBar() {
   const vw = innerWidth, narrow = vw <= 700;
   const right = (!panel.classList.contains('hidden') && !narrow ? vw - 324 : vw) - 8;
@@ -3420,11 +3420,11 @@ function celestialFrame() {
 
 function meteorField() {
   const radiant = skyVector(55, P.meteorHeading);
-  const A = [], B = [], prog = [];
+  const A = [], B = [], prog = [], live = ANIM.playing || ANIM.micro > 0;
   for (let i = 0; i < 12; i++) {
     const period = 3 + 7 * rng(i * 131 + 7)(), phase = ANIM.micro / period + rng(i * 71 + 3)();
-    const cycle = ANIM.playing || ANIM.micro > 0 ? Math.floor(phase) : 0;
-    prog.push(ANIM.playing || ANIM.micro > 0 ? (phase - cycle) / 0.18 : -1);
+    const cycle = live ? Math.floor(phase) : 0;
+    prog.push(live ? (phase - cycle) / 0.18 : -1);
     const R = rng(P.meteorSeed * 9973 + 17 + i * 7919 + cycle * 104729);
     let dir = radiant;
     for (let k = 0; k < 24; k++) {
@@ -4695,8 +4695,9 @@ function showTab(id) {
 
 const staticRefreshers = [];
 
+// Icons ignore the pointer so presses land on their button, even while the play icon is swapped.
 function svg(paths) {
-  return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round">${paths}</svg>`;
+  return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" pointer-events="none">${paths}</svg>`;
 }
 
 const lookRefreshers = [];
