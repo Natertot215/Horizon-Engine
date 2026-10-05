@@ -200,14 +200,13 @@ select option { background: #111; }
 #diag { position: fixed; inset: 0; z-index: 40; overflow-y: auto; background: var(--void); padding: 14px 8px 48px; font: 11px/1.45 var(--mono); }
 #diag h2 { font: 13px var(--mono); letter-spacing: .08em; margin-bottom: 6px; }
 #diag .env { color: var(--dim); white-space: pre-wrap; word-break: break-word; margin-bottom: 8px; }
-#diag .env b { color: var(--ink); font-weight: 400; }
 #diag .row-b { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
 #diag .row-b .btn { flex: none; padding: 8px 14px; font-size: 12px; }
 #diag table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 #diag th, #diag td { padding: 1px 3px; text-align: right; white-space: nowrap; }
 #diag th { color: var(--dim); font-weight: 400; }
 #diag th:first-child, #diag td:first-child { text-align: left; }
-#diag tr.sec td { text-align: left; color: var(--dim); padding-top: 8px; border-bottom: 1px solid var(--faint); }
+#diag tr.sec td { text-align: left; white-space: normal; color: var(--dim); padding-top: 8px; border-bottom: 1px solid var(--faint); }
 #diag .ok { color: #6fd08c; }
 #diag .bad { color: #ff6b5e; font-weight: 700; }
 #diag .gal { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -833,8 +832,8 @@ float valueNoise(vec2 p) {
 
 vec4 fetchBilinear(sampler2D t, vec2 x, vec2 size) {
   vec2 f = clamp(x, 0.0, 1.0) * (size - 1.0);
-  ivec2 i = ivec2(min(floor(f), size - 2.0));
-  vec2 w = f - vec2(i);
+  ivec2 i = clamp(ivec2(f), ivec2(0), ivec2(size) - 2); // always in bounds, even for a NaN x
+  vec2 w = clamp(f - vec2(i), 0.0, 1.0);
   vec4 a = texelFetch(t, i, 0), b = texelFetch(t, i + ivec2(1, 0), 0);
   vec4 c = texelFetch(t, i + ivec2(0, 1), 0), d = texelFetch(t, i + ivec2(1, 1), 0);
   return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
@@ -903,7 +902,7 @@ void main() {
     float t = (float(k) + 0.5) * dt;
     tau += extinction(sqrt(t * t + 2.0 * r * mu * t + r * r) - RG) * dt;
   }
-  outColor = vec4(exp(-tau), 1.0);
+  outColor = vec4(any(isnan(tau)) ? vec3(1.0) : exp(-tau), 1.0); // isnan: no Metal fast math (see SKY_FS)
 }`;
 
 const SKYLUT_FS = `#version 300 es
@@ -956,7 +955,7 @@ void main() {
     float muG = dot(pg, uLight);
     L += T * (uAlbedo / PI) * transmittance(RG, muG) * max(muG, 0.0);
   }
-  outColor = vec4(L, 1.0);
+  outColor = vec4(any(isnan(L)) || any(isinf(L)) ? vec3(0.0) : L, 1.0); // isnan: no Metal fast math (see SKY_FS)
 }`;
 
 const GLSL_NOISE = `
@@ -1255,7 +1254,7 @@ vec4 nebula(vec3 p, float fp) {
 
 // Extinction toward elevation sine mu relative to the zenith, by the Extinction setting: it dims
 // stars, planets and the moon (and the moon's glitter on water) low in the sky.
-vec3 skyExtinction(float mu) { return mix(vec3(1.0), transmittance(OBS, max(mu, 0.0)) / transmittance(OBS, 1.0), uStarLook.w); }
+vec3 skyExtinction(float mu) { return mix(vec3(1.0), transmittance(OBS, max(mu, 0.0)) / max(transmittance(OBS, 1.0), vec3(1e-4)), uStarLook.w); }
 
 vec4 moonDisk(vec3 d, float fp) {
   vec3 dv = d - uMoonDir;
@@ -1645,7 +1644,7 @@ vec3 skyAmbient() {
 }
 
 // Sun and moon irradiance at the eye, set at the start of sceneColor.
-vec3 gSunE, gMoonE;
+vec3 gSunE = vec3(0.0), gMoonE = vec3(0.0);
 
 vec3 directLight(vec3 n) {
   vec3 E = gSunE * max(dot(n, uSunDir), 0.0);
@@ -1659,7 +1658,7 @@ float fogDepth(vec3 d, float dist) {
   float H = max(uFog.y, 1.0), h0 = uSurf.y;
   float rho = uFog.x * 0.0008 * exp(-h0 / H);
   if (abs(d.y) < 1e-5) return rho * dist;
-  return rho * H * (1.0 - exp(-d.y * dist / H)) / d.y;
+  return rho * H * (1.0 - exp(min(-d.y * dist / H, 80.0))) / d.y;
 }
 
 // Light the fog scatters toward the eye; Fog Glow brightens it along the horizon.
@@ -1969,7 +1968,7 @@ vec3 cityShade(vec3 ro, vec3 rd, float t, vec3 n, float fp, vec3 amb) {
     float lod = smoothstep(0.2, 0.8, px / cw), winAvg = glassy ? 0.72 : 0.31;
     float cover = mix(win, winAvg, lod);
     vec3 R = reflect(rd, n);
-    float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-rd, n), 0.0), 5.0);
+    float fres = 0.04 + 0.96 * pow(clamp(1.0 - dot(-rd, n), 0.0, 1.0), 5.0);
     vec3 refl = mix(horizonSky(R), physicalSky(normalize(vec3(R.x, max(R.y, 0.02), R.z))), smoothstep(0.0, 0.3, R.y));
     refl += sunLight(normalize(R + vec3(0.0, 1e-4, 0.0)), max(fp, 0.004)) * 0.3;
     vec3 sky = skyFacing(n, amb);
@@ -2010,7 +2009,7 @@ float glint(vec3 n, vec3 v, vec3 l, float a2) {
   float nh2 = max(dot(n, h), 1e-3);
   nh2 *= nh2;
   float D = exp((nh2 - 1.0) / (nh2 * a2)) / (PI * a2 * nh2 * nh2);
-  float F = 0.02 + 0.98 * pow(1.0 - max(dot(v, h), 0.0), 5.0);
+  float F = 0.02 + 0.98 * pow(clamp(1.0 - dot(v, h), 0.0, 1.0), 5.0);
   return F * D * smithG1(nv, a2) * smithG1(min(nl, 1.0), a2) / (4.0 * nv);
 }
 
@@ -2077,7 +2076,7 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
   vec3 n;
   vec2 w = waves(P, normalize(d.xz + 1e-6), fp * Dm, max(-d.y, 0.003), n);
   vec3 v = -d;
-  F = (0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0)) * uSurfB.a;
+  F = (0.02 + 0.98 * pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 5.0)) * uSurfB.a;
   r = reflect(d, n);
   // Even flat water reflects only E / Dm above the horizon, so only facets that tilt the ray
   // below it count, and the clamp stays small enough not to lift the shore's mirror image.
@@ -2165,7 +2164,7 @@ Blade grassBlade(ivec2 c, int k, float t) {
   float side = b.kind > 1.5 && b.kind < 2.5 ? 0.0 : (rnd(h) - 0.5) * 0.8;
   vec2 L = lean * normalize(gLean + vec2(-gLean.y, gLean.x) * side);
   float m = min(v0, 1.0 - v0) * gCell.y - (b.kind > 1.5 && b.kind < 2.5 ? 0.012 : 0.5 * b.w);
-  L = vec2(clamp(L.x, -u0 * gCell.x, (2.0 - u0) * gCell.x - b.w), clamp(L.y, -m, m));
+  L = vec2(clamp(L.x, -u0 * gCell.x, (2.0 - u0) * gCell.x - b.w), clamp(L.y, -max(m, 0.0), max(m, 0.0)));
   b.hy = sqrt(max(len * len - dot(L, L), 0.05 * len * len));
   float phi = rnd(h) * TAU;
   b.nh = vec2(cos(phi), sin(phi));
@@ -2214,7 +2213,7 @@ float bladeHit(Blade b, vec3 rd, float tA, float tB, float pw0, out float tHit, 
     if (yy < 0.0 || yy > 1.0) continue;
     float prof = b.kind < 0.5 ? pow(clamp((1.0 - yy) * 3.0, 0.0, 1.0), 0.6)
                : b.kind < 1.5 && yy > 0.72 ? 1.0 + 3.2 * sin(PI * min((yy - 0.72) / 0.3, 1.0)) * smoothstep(1.0, 0.96, yy)
-               : b.kind > 2.5 && yy > 0.86 ? 1.0 + 2.6 * sqrt(sin(PI * min((yy - 0.86) / 0.15, 1.0))) * smoothstep(1.0, 0.975, yy) : 1.0;
+               : b.kind > 2.5 && yy > 0.86 ? 1.0 + 2.6 * sqrt(max(sin(PI * min((yy - 0.86) / 0.15, 1.0)), 0.0)) * smoothstep(1.0, 0.975, yy) : 1.0;
     float hw = 0.5 * b.w * prof;
     float off = b0 + db * t - b.ka * (yy * b.hy) * (yy * b.hy);
     // Overlap of the blade with the pixel footprint, so sub-pixel blades add the right coverage.
@@ -2242,7 +2241,7 @@ vec3 grassLight(vec3 alb, vec3 n, vec3 d, float y, float gap, vec3 amb) {
   float ndl = dot(n, L);
   vec3 lit = ndl > 0.0 ? alb * ndl : alb * vec3(1.3, 1.5, 0.55) * (-ndl);
   vec3 hv = normalize(L - d);
-  float spec = ndl > 0.0 ? (0.04 + 0.96 * pow(1.0 - max(dot(-d, hv), 0.0), 5.0)) * 2.3 * pow(max(dot(n, hv), 0.0), 50.0) * ndl : 0.0;
+  float spec = ndl > 0.0 ? (0.04 + 0.96 * pow(clamp(1.0 - dot(-d, hv), 0.0, 1.0), 5.0)) * 2.3 * pow(max(dot(n, hv), 0.0), 50.0) * ndl : 0.0;
   col += (lit / PI + spec) * gSunE * shadow * gShade;
   if (uMoonScale > 0.0) col += alb * max(dot(n, uMoonDir), 0.0) / PI * gMoonE * shadow;
   return col;
@@ -2556,7 +2555,8 @@ vec4 treeShade(Tree tr, vec3 ro, vec3 rd, float t0, float t1, float tw, vec3 n, 
     int N = int(clamp(tr.R.x / (fp * t0 + 1e-4) * 0.35, 18.0, 56.0));
     float dt = (tEnd - t0) / float(N), t = t0 + dt * jitter;
     float sigma = 30.0 / tr.R.x;
-    for (int k = 0; k < N; k++) {
+    for (int k = 0; k < 56; k++) {
+      if (k >= N) break;
       vec3 p = ro + rd * t;
       vec2 cd = crownDensity(tr, p, fp * t);
       float dens = cd.x;
@@ -2922,8 +2922,8 @@ void main() {
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-const SKY_FS = (diag = false) => `#version 300 es
-${diag ? '#define DIAG\n' : ''}precision highp float;
+const SKY_FS = (diag = false, fast = false) => `#version 300 es
+${diag ? '#define DIAG\n' : ''}${fast ? '#define FASTMATH\n' : ''}precision highp float;
 precision highp int;
 ${SCENE_UNIFORMS.map(([n, t, , len]) => `uniform ${t} ${n}${len ? `[${len}]` : ''};`).join('\n')}
 uniform sampler2D uTrans, uSkySun, uSkyMoon;
@@ -2985,7 +2985,7 @@ float lpFocus(vec3 d) {
 
 vec3 nightSky(vec3 d) {
   float e = clamp(d.y, 0.0, 1.0); // a normalized d.y can round past 1, which asin and pow reject
-  vec3 c = mix(uNightZenith, uNightHorizon, pow(1.0 - e, 1.0 + uNightCurve * 10.0));
+  vec3 c = mix(uNightZenith, uNightHorizon, pow(max(1.0 - e, 1e-6), 1.0 + uNightCurve * 10.0));
   c += uLPColor * uLP.x * exp(-e / max(uLP.y, 0.005)) * lpFocus(d);
   float ag = (asin(e) - 0.16) / 0.12;
   c += uAirglow.rgb * uAirglow.a * exp(-ag * ag);
@@ -3197,7 +3197,7 @@ vec3 tonemap(vec3 c) {
 
 vec3 toSRGB(vec3 c) {
   c = clamp(c, 0.0, 1.0);
-  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+  return mix(c * 12.92, 1.055 * pow(max(c, 1e-6), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
 
 vec3 softLight(vec3 a, vec3 b) { return (1.0 - 2.0 * b) * a * a + 2.0 * b * a; }
@@ -3211,7 +3211,7 @@ vec3 hueRotate(vec3 c, float a) {
 vec3 grade(vec3 lin, vec2 img) {
   vec3 c = toSRGB(tonemap(max(lin * uWB, 0.0)));
   vec3 k = vec3(uGrade.x);
-  c = mix(pow(c * 2.0, k) * 0.5, 1.0 - pow((1.0 - c) * 2.0, k) * 0.5, step(0.5, c));
+  c = mix(pow(max(c * 2.0, 1e-6), k) * 0.5, 1.0 - pow(max((1.0 - c) * 2.0, 1e-6), k) * 0.5, step(0.5, c));
   if (uGrade.w != 0.0) c = hueRotate(c, uGrade.w);
   float l = luma(c);
   c = mix(vec3(l), c, uGrade.y);
@@ -3271,6 +3271,12 @@ void main() {
   c = addGrain(c / float(uSamples), img);
   vec2 dp = floor(uPix0 / max(uPixStep, 1e-6)) + floor(fc);
   c += (hash12(dp) + hash12(dp + 71.3) - 1.0) / 255.0;
+  // WebKit compiles a shader with Metal fast math unless it calls isnan or isinf; under fast math
+  // iPhone GPUs filled whole 8×4 SIMD groups with garbage. This guard opts out (FASTMATH builds the
+  // unguarded shader for ?diag), and keeps a stray NaN from sticking in the accumulation buffer.
+#ifndef FASTMATH
+  if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0);
+#endif
   outColor = vec4(c, 1.0);
 }`;
 
@@ -5176,6 +5182,9 @@ function diagCases() {
   sec('A default · production shader');
   for (const [w, h] of [[256, 256], [400, 800]]) for (const p of Object.keys(DIAG_PATHS)) add(A, p, w, h, `${p} ${w === h ? w : w + '×' + h}`);
   add(A, 'view', 400, 800, 'view ÷4 400×800', { step: 4 });
+  sec('A default · fast-math build (no isnan guard): FAIL here and PASS above means fast math was the cause');
+  for (const p of ['thumb', 'f16']) add(A, p, 256, 256, `${p} 256 fast`, { fast: true });
+  add(A, 'view', 400, 800, 'view ÷4 400×800 fast', { step: 4, fast: true });
   sec(`B ${B.title} · production shader`);
   for (const p of ['thumb', 'view']) add(B, p, 256, 256, `${p} 256`);
   const all = (1 << DBG_BITS.indexOf('GRADE')) - 1; // every scene stage, LUT to CLOUDS
@@ -5207,7 +5216,7 @@ async function runDiag() {
   const bar = el('div', 'row-b', ui), copy = el('button', 'btn', bar, 'Copy results'), status = el('span', '', bar, 'compiling…');
   copy.disabled = true;
   const table = el('table', '', ui);
-  table.innerHTML = '<tr><th>case</th><th>8×4%</th><th>4×4%</th><th>8×8%</th><th>edge</th><th>blk</th><th>NaN</th><th>ms</th><th></th></tr>';
+  table.innerHTML = '<tr><th>case</th><th></th><th>8×4%</th><th>4×4%</th><th>8×8%</th><th>edge</th><th>blk</th><th>NaN</th><th>ms</th></tr>';
   el('div', 'env', ui, '\n8×4% 4×4% 8×8%: cells standing out from their neighbours · edge: step across 8×4 borders over step inside (≈1 when clean) · blk: all-black 8×4 cells · NaN: NaN/Inf values in the RGBA16F read-back (– none read) · ms: draw + read-back');
   const gal = el('div', 'gal', ui);
   el('div', 'env', ui, `\next ${env.extensions.join(' ')}\n\n${env.ua}`);
@@ -5219,6 +5228,7 @@ async function runDiag() {
   try {
     const tc = performance.now();
     dg.prog = program(VS, SKY_FS(true), { uTrans: 0, uSkySun: 1, uSkyMoon: 2, uNoise3: 3 });
+    dg.fast = program(VS, SKY_FS(false, true), { uTrans: 0, uSkySun: 1, uSkyMoon: 2, uNoise3: 3 });
     env.diagCompileMs = Math.round(performance.now() - tc);
   } catch (e) {
     $('err').style.display = 'none';
@@ -5226,7 +5236,7 @@ async function runDiag() {
   }
   const cases = diagCases(), runs = cases.filter(c => !c.sec);
   // Warm up both programs (drivers may build the pipeline on first draw) so timings are per render.
-  for (const prog of [skyProg, dg.prog]) if (prog) diagRender({ to: 't8', w: 8, h: 8, prog }, sceneValues([8, 8]));
+  for (const prog of [skyProg, dg.prog, dg.fast]) if (prog) diagRender({ to: 't8', w: 8, h: 8, prog }, sceneValues([8, 8]));
   let done = 0, passed = 0, caught = 0, shown = 0;
   for (const c of cases) {
     if (c.sec) { el('td', '', el('tr', 'sec', table), c.sec).colSpan = 9; continue; }
@@ -5234,12 +5244,12 @@ async function runDiag() {
     await nextFrame();
     const row = { scene: c.scene.name, label: c.label, path: c.path, w: c.w, h: c.h, step: c.step || 1, mask: c.mask, diag: !!c.diag };
     try {
-      if (c.diag && !dg.prog) throw new Error('no diag shader');
+      if ((c.diag && !dg.prog) || (c.fast && !dg.fast)) throw new Error('no diag shader');
       Object.assign(P, lookParams(c.scene));
       Object.assign(ANIM, { time: 0, micro: 0, cloud: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] });
       const values = sceneValues([c.w * (c.step || 1), c.h * (c.step || 1)]);
       gl.getError();
-      const t = performance.now(), { px, f } = diagRender({ ...c, prog: c.diag ? dg.prog : skyProg }, values);
+      const t = performance.now(), { px, f } = diagRender({ ...c, prog: c.fast ? dg.fast : c.diag ? dg.prog : skyProg }, values);
       row.ms = Math.round(performance.now() - t);
       row.glError = gl.getError();
       if (gl.isContextLost()) throw new Error('WebGL context lost');
@@ -5278,9 +5288,10 @@ async function runDiag() {
     }
     report.cases.push(row);
     const tr = el('tr', '', table), pct = k => row[k] ? (row[k].score * 100).toFixed(2) : '';
-    for (const v of [c.label, pct('8x4'), pct('4x4'), pct('8x8'), row.edge?.toFixed(2) ?? '', row['8x4']?.black ?? '', row.nan ?? '–', row.ms ?? '', row.result]) el('td', '', tr, v);
-    tr.lastChild.className = /PASS|CAUGHT/.test(row.result) ? 'ok' : 'bad';
-    if (row.error) tr.lastChild.title = row.error;
+    for (const v of [c.label, row.result, pct('8x4'), pct('4x4'), pct('8x8'), row.edge?.toFixed(2) ?? '', row['8x4']?.black ?? '', row.nan ?? '–', row.ms ?? '']) el('td', '', tr, v);
+    const res = tr.children[1];
+    res.className = /PASS|CAUGHT/.test(row.result) ? 'ok' : 'bad';
+    if (row.error) res.title = row.error;
   }
   report.ms = Math.round(performance.now() - t0);
   report.summary = `${passed}/${report.cases.length} ok · self-test caught ${caught}/${runs.filter(c => c.self).length}`;
