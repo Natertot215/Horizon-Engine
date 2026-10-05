@@ -1543,8 +1543,7 @@ vec4 cloudLayer(int i, vec3 d, float fp, float jitter) {
   vec3 lightCol = (moonLit ? uMoonScale : uSunScale * glow) * transmittance(rm, dot(up, L)) * tint * uCloudLight.w;
   vec3 ambTop = skyLight(vec3(0.0, 1.0, 0.0));
   vec3 ambBot = cloudAmbient * 0.6;
-  vec2 hd = d.xz / max(length(d.xz), 1e-6);
-  ambBot += uLPColor * uLP.x * uCloudMisc.y * uNightScale * mix(1.0, 2.0 * pow(0.5 + 0.5 * dot(hd, uLPDir), 2.0), uLP.z) * (1.0 - 0.5 * smoothstep(0.0, 0.6, d.y));
+  ambBot += uLPColor * uLP.x * uCloudMisc.y * uNightScale * lpFocus(d) * (1.0 - 0.5 * smoothstep(0.0, 0.6, d.y));
   vec3 shade = mix(vec3(1.0), uCloudShade.rgb / max(luma(uCloudShade.rgb), 0.05), uCloudShade.a);
   ambTop *= shade * uCloudLight.y * uCloudLight.w;
   ambBot *= shade * uCloudLight.y * uCloudLight.w;
@@ -1774,13 +1773,11 @@ float shoreEntry(vec3 ro, vec3 rd) {
 // Distance along the ray to the hills, mountains or forest, or -1.
 float landTrace(vec3 ro, vec3 rd, float fp) {
   float far = landFar(), t = shoreEntry(ro, rd), kStep = uLand.x > 1.5 && uLand.x < 2.5 ? 0.4 : 0.5;
-  // Tree cones are steep: step finely only inside the canopy band (trees stand at most 26 m).
-  float band = uLand.x > 2.5 ? 26.0 : 0.0;
   // The steepest apparent slope anything can reach (relief stays below 1, so landHeight's v below
   // 1.42; the volcano adds its own): a ray climbing faster, above it, is clear.
   float top = tan(uLand.y * DEG) * landGain() * 1.42 + (uPeak.x > 0.0 ? tan(uPeak.x * DEG) : 0.0);
   float tPrev = t, dPrev = 1e9;
-  for (int i = 0; i < 300; i++) {
+  for (int i = 0; i < 600; i++) {
     vec3 p = ro + rd * t;
     float r = length(p.xz);
     if (r > far) break;
@@ -1790,7 +1787,11 @@ float landTrace(vec3 ro, vec3 rd, float fp) {
     if (rd.y > top && p.y + uSurf.y > top * r + 40.0) break;
     tPrev = t;
     dPrev = dy;
-    t += max(dy > band ? (dy - band) * kStep + band * 0.2 : dy * 0.2, fp * t + 0.5);
+    // Tree cones are steep: step finely inside the canopy band (trees stand at most 26 m) while
+    // canopy() still draws single trees. Steps never shrink below a share of the distance, so rays
+    // that skim the land all the way out still arrive within the loop.
+    float band = uLand.x > 2.5 && fp * t < 7.0 ? 26.0 : 0.0;
+    t += max(dy > band ? (dy - band) * kStep + band * 0.2 : dy * 0.2, max(fp, dy > band ? 0.01 : 0.003) * t + 0.5);
   }
   return -1.0;
 }
@@ -2036,8 +2037,10 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
   vec3 v = -d;
   F = (0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0)) * uSurfB.a;
   r = reflect(d, n);
-  under = r.y < 1e-3;
-  r = normalize(vec3(r.x, max(r.y, 1e-3), r.z));
+  // Even flat water reflects only E / Dm above the horizon, so only facets that tilt the ray
+  // below it count, and the clamp stays small enough not to lift the shore's mirror image.
+  under = r.y < 0.0;
+  r = normalize(vec3(r.x, max(r.y, 1e-5), r.z));
   vec3 sunE = gSunE * gShade;
   vec3 spec = sunE * glint(n, v, uSunDir, w.x + 2e-5 + uSunDisk.y * uSunDisk.y);
   if (uMoon.x > 0.0) {
@@ -2645,7 +2648,7 @@ float terrainTrace(vec3 d, float fp) {
   }
   gH0 = terrainH(vec2(0.0), 0.0);
   float t = 0.0, tPrev = 0.0, gapPrev = E;
-  for (int i = 0; i < 110; i++) {
+  for (int i = 0; i < 450; i++) {
     vec3 p = d * t;
     float gap = p.y + E + gH0 - terrainH(p.xz, fp * t);
     if (gap < 0.0) {
@@ -2661,7 +2664,9 @@ float terrainTrace(vec3 d, float fp) {
     if (d.y > 0.0 && p.y + E > top) return -1.0;
     tPrev = t;
     gapPrev = gap;
-    t += max(gap * 0.55, 0.04 + t * 0.012);
+    // Steps never shrink below a share of the distance (a little more past 500 m), so rays that
+    // graze crests still reach the end of the march within the loop.
+    t += max(gap * 0.55, 0.04 + t * mix(0.012, 0.018, smoothstep(500.0, 3000.0, t)));
     if (t > 6000.0) break;
   }
   return -1.0;
@@ -2929,12 +2934,16 @@ vec3 physicalSky(vec3 d) {
   return c;
 }
 
+// How much stronger light pollution is toward its heading than away from it (Focus), along d.
+float lpFocus(vec3 d) {
+  float facing = 0.5 + 0.5 * dot(d.xz / max(length(d.xz), 1e-6), uLPDir);
+  return mix(1.0, 2.0 * facing * facing, uLP.z);
+}
+
 vec3 nightSky(vec3 d) {
   float e = clamp(d.y, 0.0, 1.0); // a normalized d.y can round past 1, which asin and pow reject
   vec3 c = mix(uNightZenith, uNightHorizon, pow(1.0 - e, 1.0 + uNightCurve * 10.0));
-  vec2 hd = d.xz / max(length(d.xz), 1e-6);
-  float facing = 0.5 + 0.5 * dot(hd, uLPDir);
-  c += uLPColor * uLP.x * exp(-e / max(uLP.y, 0.005)) * mix(1.0, 2.0 * facing * facing, uLP.z);
+  c += uLPColor * uLP.x * exp(-e / max(uLP.y, 0.005)) * lpFocus(d);
   float ag = (asin(e) - 0.16) / 0.12;
   c += uAirglow.rgb * uAirglow.a * exp(-ag * ag);
   return c;
@@ -4661,6 +4670,7 @@ function buildSize(body) {
 }
 
 function renderMenu(menu) {
+  const scroll = panel.scrollTop; // read before emptying the body clamps it
   refreshers.length = 0;
   refreshers.push(...staticRefreshers);
   tabBody.textContent = '';
@@ -4672,7 +4682,7 @@ function renderMenu(menu) {
     for (const it of items) buildItem(it, body);
   }
   // On phones the whole panel scrolls; bring a new menu's start back into view.
-  panel.scrollTop = C.on ? 0 : Math.min(panel.scrollTop, $('tabs').offsetTop);
+  panel.scrollTop = C.on ? 0 : Math.min(scroll, $('tabs').offsetTop);
   syncUI();
 }
 
