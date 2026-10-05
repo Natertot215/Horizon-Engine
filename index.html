@@ -370,7 +370,7 @@ const BAND_STYLES = [
 
 const DEFAULTS = {
   sunElev: 8, sunHeading: 200, sunDisk: true, sunSize: 1, sunGlow: 0.5, sunIntensity: 1,
-  rayleigh: 1, mie: 1, mieG: 0.8, ozone: 1, skyFill: 0.5, albedo: 0.12,
+  rayleigh: 1, mie: 1, mieG: 0.8, ozone: 1, skyFill: 0.5,
   nightBright: 1, nightZenith: '#0a0e2a', nightHorizon: '#2b2550', nightCurve: 0.35, nightVibrance: 0,
   lpStrength: 0.12, lpColor: '#c98a6a', lpHeading: 20, lpFocus: 0.5, lpHeight: 0.12,
   airglow: 0.06, airglowColor: '#4f8a5e',
@@ -1026,7 +1026,9 @@ void main() {
     float muH = -sqrt(max(0.0, 1.0 - RG * RG / (r * r)));
     vec3 Ts = transmittance(r, muS);
     vec3 Tms = transmittance(r, max(muS, 0.25)) * exp(-max(0.0, muH - muS) * 60.0);
-    vec3 S = (sR * pr + sM * pm) * Ts + (sR + sM) * (uFill * 0.08) * Tms;
+    // Sunlight the ground reflects fills the lower half of the sphere, seen through the air below p.
+    vec3 bounce = (uAlbedo / PI) * max(muS, 0.0) * transmittance(RG, muS) * transmittance(RG, 1.0) / transmittance(r, 1.0);
+    vec3 S = (sR * pr + sM * pm) * Ts + (sR + sM) * (uFill * 0.08 * Tms + 0.5 * bounce);
     vec3 stepT = exp(-ext * dt);
     L += T * S * (1.0 - stepT) / max(ext, vec3(1e-9));
     T *= stepT;
@@ -1339,7 +1341,7 @@ vec3 milkyWay(vec3 p, float fp, out float boost, out float clear) {
   vec3 col = mix(uMWArm, uMWCore, warm);
   col = mix(col, col * vec3(1.0, 0.6, 0.4), clamp(dust * 1.8, 0.0, 1.0) * 0.6);
   // Pink HII regions sprinkled along the plane, thickest toward the core.
-  float hii = smoothstep(0.8, 0.95, nz(g * 9.0 + o.yzx + 5.3, 14.4 * fp).g) * band * (0.35 + toward) * (1.0 - dust) * uMWB.y;
+  float hii = smoothstep(0.55, 0.85, nz(g * 4.5 + o.yzx + 5.3, 7.2 * fp).g) * band * (0.35 + toward) * (1.0 - dust) * uMWB.y;
   return (col * lum + vec3(1.0, 0.3, 0.42) * hii * 0.7) * uMW.x * 0.1;
 }
 
@@ -1973,8 +1975,9 @@ vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
     float snow = smoothstep(1.0 - uPeak.w - 0.03, 1.0 - uPeak.w + 0.03, e + (gully - 0.5) * 0.22);
     alb = mix(alb, vec3(0.84, 0.86, 0.9), snow);
   } else if (type > 2.5 && type < 3.5) {
-    // Forest: darker deep in each crown, a little lighter and warmer at the tips.
-    alb = mix(forest, uLandColor * 0.5, 0.15) * (0.75 + 0.5 * hashL(floor(p.xz / 10.0)));
+    // Forest: broadleaf crowns lighter and yellower than conifers; darker deep in each crown.
+    vec3 crown = mix(vec3(0.045, 0.065, 0.022), vec3(0.015, 0.028, 0.02), uLandC.z) * (0.7 + 0.6 * n2);
+    alb = mix(crown, uLandColor * 0.5, 0.15) * (0.75 + 0.5 * hashL(floor(p.xz / 10.0)));
     ao = mix(0.35, 1.0, gCanopy);
   } else {
     // Forest on gentle ground below the tree line, meadow in clearings, snow above the snow line.
@@ -2128,6 +2131,8 @@ float glint(vec3 n, vec3 v, vec3 l, float a2) {
 
 // Sum of directional deep-water waves. Waves smaller than the pixel footprint drop out of the
 // normal and move into the unresolved slope variance (x), which widens the sun's glitter path.
+// The crest (y) is the slope-weighted height of the longer half of the waves (whitecaps ride
+// those), in units of its spread over the ones still resolved, so it reads the same near and far.
 // fpD is the pixel footprint across the view (m); along the view it stretches by 1 / sin(grazing).
 vec2 waves(vec2 P, vec2 vh, float fpD, float graze, out vec3 n) {
   float t = uTime.y * uSurfC.z, S = uSurf.z, stretch2 = 1.0 / (graze * graze);
@@ -2135,19 +2140,20 @@ vec2 waves(vec2 P, vec2 vh, float fpD, float graze, out vec3 n) {
   // Wave groups: slowly drifting amplitude patches stop the components reading as a lattice.
   vec4 grp = nz(vec3(P / (90.0 * S) * 0.1, 0.19 + t * 0.0007), rate / (90.0 * S) * 0.1) * 1.6 - 0.3;
   vec3 g = vec3(0.0);
-  float h = 0.0, hs = 1e-6, mss = 0.0;
+  float cr = 0.0, cs = 1e-6, mss = 0.0;
   for (int i = 0; i < WAVES; i++) {
     vec4 w = uWave[i];
     float k = length(w.xy);
     float c = dot(w.xy, vh) / k;
     float vis = smoothstep(1.5, 4.0, TAU / (k * fpD * sqrt(1.0 + c * c * (stretch2 - 1.0))));
-    float a = w.w * grp[i & 3];
-    float s = a * k;
+    float s = w.w * k * grp[i & 3];
     float th = dot(w.xy, P) - sqrt(9.81 * k * (1.0 + k * k * 7.4e-6)) * t + w.z;
     float sn = sin(th);
     g += vec3(w.xy / k * cos(th), sn * uWaveFx.x) * (s * vis);
-    h += a * sn * vis;
-    hs += w.w;
+    if (i < WAVES / 2) {
+      cr += sn * s * vis;
+      cs += 0.5 * pow(w.w * k * vis, 2.0);
+    }
     mss += 0.5 * s * s * (1.0 - vis * vis);
   }
   // Wind ripples: two octaves of stretched, animated noise carry the finest slopes.
@@ -2164,7 +2170,7 @@ vec2 waves(vec2 P, vec2 vh, float fpD, float graze, out vec3 n) {
     lr *= 0.3;
   }
   n = normalize(vec3(-g.x, 1.0 - g.z, -g.y));
-  return vec2(mss, h / hs);
+  return vec2(mss, cr / sqrt(cs));
 }
 
 vec2 worley2(vec2 x) {
@@ -2196,7 +2202,7 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
   under = r.y < 0.0;
   r = normalize(vec3(r.x, max(r.y, 1e-5), r.z));
   vec3 sunE = gSunE * gShade;
-  vec3 spec = sunE * glint(n, v, uSunDir, w.x + 2e-5 + uSunDisk.y * uSunDisk.y);
+  vec3 spec = sunE * uSunDisk.x * glint(n, v, uSunDir, w.x + 2e-5 + uSunDisk.y * uSunDisk.y);
   if (uMoon.x > 0.0) {
     // The disk is drawn far below its true radiance so its face stays visible; the glitter path
     // uses a brighter moon so it reads the way it does in a night photograph.
@@ -2216,10 +2222,11 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
     F *= 1.0 - 0.8 * ridge * (1.0 - far);
     spec *= 1.0 - 0.8 * ridge * (1.0 - far);
   } else {
-    // Light scattered back out of the water column; sunlit crests glow when facing the sun.
+    // Light scattered back out of the water column; crests are thin enough to let light through
+    // in the Accent colour, brightest with the sun behind them.
     vec2 dh = normalize(d.xz + 1e-5), sh = normalize(uSunDir.xz + 1e-5);
-    float fwd = pow(max(dot(dh, sh), 0.0), 4.0) * smoothstep(-0.1, 0.9, w.y);
-    body = uSurfA.rgb * E + uSurfB.rgb * sunE * fwd * 0.02;
+    float thin = smoothstep(-0.2, 1.0, w.y) * uWaveFx.x;
+    body = uSurfA.rgb * E + uSurfB.rgb * thin * (0.3 * E + 0.1 * sunE * pow(max(dot(dh, sh), 0.0), 4.0));
   }
   vec3 col = body * (1.0 - F) + spec * uSurfB.a;
   if (uWaveFx.y > 0.0) {
@@ -2228,7 +2235,8 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
     float t = uTime.y * uSurfC.z;
     float streak = nz(vec3(q * vec2(0.012, 0.06) + vec2(-t * 0.004, 0.0), 0.37), rate * 0.06 / uSurf.z).r;
     float speck = nz(vec3(q * 0.35, 0.71 + t * 0.002), rate * 0.35 / uSurf.z).g;
-    float foam = clamp(smoothstep(0.62, 0.95, w.y + (streak - 0.5) * 0.7 + (speck - 0.5) * 0.3) * uWaveFx.y, 0.0, 1.0);
+    // The crest is spread about ±0.4: Whitecaps lowers the threshold from its top percent.
+    float foam = smoothstep(0.0, 0.25, w.y + (streak - 0.5) * 0.6 + (speck - 0.5) * 0.3 - 1.1 + 0.7 * uWaveFx.y);
     col = mix(col, vec3(0.82) * E, foam);
     F *= 1.0 - foam;
   }
@@ -2876,13 +2884,15 @@ vec3 terrainShade(vec3 d, float t, float fp, vec3 amb) {
   vec3 col = alb * (gSunE * max(dot(n, uSunDir), 0.0) * sh / PI + amb * (0.55 + 0.45 * n.y));
   if (uMoonScale > 0.0) col += alb * gMoonE * max(dot(n, uMoonDir), 0.0) / PI;
   if (type == 6 && uSurfC.y > 0.0) {
-    // Sparkle: a few crystal facets per footprint catch the sun or moon.
-    float cell = max(rate * 2.0, 0.015);
-    uint hh = hash3u(uvec3(uvec2(ivec2(floor(P / cell)) + 1000000), 7u));
-    vec3 nf = normalize(n * 1.6 + vec3(rnd(hh) - 0.5, 0.0, rnd(hh) - 0.5));
-    vec3 L = uSunDir.y > -0.05 ? uSunDir : uMoonDir;
-    vec3 E2 = uSunDir.y > -0.05 ? gSunE : vec3(uMoonScale) * 30.0;
-    col += E2 * pow(max(dot(reflect(d, nf), L), 0.0), 600.0) * step(0.75, rnd(hh)) * uSurfC.y * 25.0 * sh;
+    // Sparkle: one crystal facet per footprint, facing any way at all, flashes where it mirrors
+    // the sun or moon into the eye, whichever side the light is on.
+    uint hh = hash3u(uvec3(uvec2(ivec2(floor(P / (rate * 2.0))) + 1000000), 7u));
+    vec3 nf = normalize(vec3(rnd(hh) * 2.0 - 1.0, rnd(hh), rnd(hh) * 2.0 - 1.0));
+    bool sun = uSunDir.y > -0.05;
+    vec3 L = sun ? uSunDir : uMoonDir;
+    vec3 E2 = sun ? gSunE * uSunDisk.x : vec3(uMoonScale) * 30.0;
+    // Toward the horizon one facet's cell stretches over many pixels: fade out before it shows.
+    if (dot(nf, d) < 0.0) col += E2 * pow(max(dot(reflect(d, nf), L), 0.0), 150.0) * uSurfC.y * 3.0 * sh * smoothstep(0.03, 0.08, -d.y);
   }
   return col;
 }
@@ -3193,16 +3203,17 @@ vec3 nightSky(vec3 d) {
 // Diffuse light from the sky in direction d: scattered sun and moon light plus the night glow.
 vec3 skyLight(vec3 d) { return physicalSky(d) + nightSky(d) * uNightScale; }
 
+// The disk and the lens glow around it; the glow's core grows with the disk.
 vec3 sunLight(vec3 d, float fp) {
   float ang = 2.0 * asin(clamp(length(d - uSunDir) * 0.5, 0.0, 1.0));
   float r = uSunDisk.y;
   vec3 T = transmittance(OBS, d.y);
   float q = ang / r;
   float limb = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - q * q)));
-  float cover = clamp((r - ang) / max(fp, 1e-7) + 0.5, 0.0, 1.0) * uSunDisk.x;
+  float cover = clamp((r - ang) / max(fp, 1e-7) + 0.5, 0.0, 1.0);
   vec3 c = T * cover * limb / (PI * SUN_R * SUN_R);
-  c += transmittance(OBS, uSunDir.y) * uSunDisk.z * (6.0 * exp(-ang / 0.01) + 0.5 * exp(-ang / 0.06) + 0.05 * exp(-ang / 0.3));
-  return c * uSunScale;
+  c += transmittance(OBS, uSunDir.y) * uSunDisk.z * (6.0 * exp(-ang / (0.01 * r / SUN_R)) + 0.5 * exp(-ang / 0.06) + 0.05 * exp(-ang / 0.3));
+  return c * (uSunScale * uSunDisk.x);
 }
 
 ${GLSL_CLOUDS}
@@ -3641,6 +3652,12 @@ function skyMeter(b) {
   return sum / wsum;
 }
 
+// The share of light the ground bounces back into the air: water reflects little, land its colour.
+function groundAlbedo() {
+  const [r, g, b] = hexLinear(P.surfColorA);
+  return P.surface === 1 ? 0.06 : 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 function renderSkyLUT(t, elev) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
   gl.viewport(0, 0, SKY_W, SKY_H);
@@ -3650,7 +3667,7 @@ function renderSkyLUT(t, elev) {
   gl.uniform4f(lutProg.u.uAtmo, P.rayleigh, P.mie, P.ozone, P.mieG);
   gl.uniform3f(lutProg.u.uLight, 0, Math.sin(elev * DEG), Math.cos(elev * DEG));
   gl.uniform1f(lutProg.u.uFill, P.skyFill);
-  gl.uniform1f(lutProg.u.uAlbedo, P.albedo);
+  gl.uniform1f(lutProg.u.uAlbedo, groundAlbedo());
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.readPixels(0, 0, SKY_W, SKY_H, gl.RGBA, gl.FLOAT, lutBuf);
   return skyMeter(lutBuf);
@@ -3666,7 +3683,7 @@ function updateAtmosphere() {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     atmo.transSig = transSig;
   }
-  const lutSig = [transSig, P.mieG, P.skyFill, P.albedo].join();
+  const lutSig = [transSig, P.mieG, P.skyFill, groundAlbedo()].join();
   const sunSig = lutSig + ',' + P.sunElev;
   if (sunSig !== atmo.sunSig) {
     atmo.Ysun = renderSkyLUT(atmo.sun, P.sunElev);
@@ -3780,7 +3797,7 @@ function waveField() {
   }
   const total = weights.reduce((a, b) => a + b);
   for (let i = 0; i < 32; i++) out[i * 4 + 3] = Math.sqrt(2 * 0.7 * mss * weights[i] / total) / out[i * 4 + 3];
-  return { waves: out, fx: [clamp(P.surfWaves / 2.5, 0, 0.8), P.surface === 1 ? P.surfFoam * clamp((P.surfWaves - 0.8) / 1.4, 0, 1) : 0, 0.15 * mss] };
+  return { waves: out, fx: [clamp(P.surfWaves / 2.5, 0, 0.8), P.surface === 1 ? P.surfFoam * clamp((P.surfWaves - 0.5) / 1.5, 0, 1) : 0, 0.15 * mss] };
 }
 
 // Foreground trees: scattered around a heading at random distances, kept apart, sorted front to
@@ -3844,8 +3861,9 @@ function derive(img) {
   });
   updateAtmosphere();
   const ev = Math.pow(2, P.ev);
+  // Exposure is metered for a sun of unit strength, so Sunlight brightens what the sun lights.
   const sunY = atmo.Ysun * P.sunIntensity;
-  const gain = KEY / (sunY + (P.moon ? atmo.Ymoon * moonI : 0) + NIGHT_FLOOR);
+  const gain = KEY / (atmo.Ysun + (P.moon ? atmo.Ymoon * moonI : 0) + NIGHT_FLOOR);
   const nightVis = gain * NIGHT_FLOOR / KEY, sunVis = gain * sunY / KEY;
   D.sunScale = P.sunIntensity * gain * ev;
   D.moonScale = moonI * gain * ev;
@@ -4649,7 +4667,6 @@ const TABS = [
       { key: 'mieG', label: 'Halo Focus', min: 0.5, max: 0.96, step: 0.005, fmt: fmt(3) },
       { key: 'ozone', label: 'Ozone', min: 0, max: 4, step: 0.01, fmt: fmt(2) },
       { key: 'skyFill', label: 'Sky Fill', min: 0, max: 2, step: 0.01, fmt: fmt(2) },
-      { key: 'albedo', label: 'Ground Bounce', min: 0, max: 0.6, step: 0.01, fmt: fmt(2) },
     ]],
     ['Night Sky', [
       { key: 'nightBright', label: 'Brightness', min: 0, max: 4, step: 0.01, fmt: fmt(2) },
