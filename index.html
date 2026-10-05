@@ -3563,7 +3563,11 @@ function sceneValues(img) {
   return SCENE_UNIFORMS.map(([name, type, get]) => [name, type, get()]);
 }
 
-const BAND_PX = 1 << 16;
+// Phones get a much smaller GPU budget per frame: iOS cuts off GPU work that runs too long, which
+// left blocks of a frame unrendered (dark, tinted squares in the averaged view, stray pixels in
+// thumbnails). Refinement passes are therefore spread over several frames in row bands.
+const PHONE = matchMedia('(pointer: coarse)').matches;
+const FRAME_PX = PHONE ? 1 << 17 : 1 << 21;
 
 function drawSky(fbo, w, h, pix0, step, values, opts = {}) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
@@ -3585,16 +3589,10 @@ function drawSky(fbo, w, h, pix0, step, values, opts = {}) {
   gl.uniform1i(sky.u.uSamples, opts.samples || 1);
   gl.uniform1i(sky.u.uFrame, opts.frame || 0);
   gl.uniform1f(sky.u.uQuality, (opts.quality ?? 1) * P.cQuality);
-  // Draw in horizontal bands, each flushed on its own. iOS aborts GPU work that runs too long,
-  // which left whole blocks unrendered (missing samples, stale pixels) in heavy scenes.
-  const rows = Math.max(1, Math.floor(BAND_PX / (w * (opts.samples || 1))));
-  if (rows >= h) { gl.drawArrays(gl.TRIANGLES, 0, 3); return; }
+  if (!opts.rows) { gl.drawArrays(gl.TRIANGLES, 0, 3); return; }
   gl.enable(gl.SCISSOR_TEST);
-  for (let y = 0; y < h; y += rows) {
-    gl.scissor(0, y, w, Math.min(rows, h - y));
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.flush();
-  }
+  gl.scissor(0, opts.rows[0], w, opts.rows[1] - opts.rows[0]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.disable(gl.SCISSOR_TEST);
 }
 
@@ -3675,9 +3673,10 @@ function elapsedLabel() {
 // ─── Preview Rendering ──────────────────────────────────────────────────────
 
 const VIEW = Object.assign({ scale: 1 }, store('horizon-view'));
-const LOW = 0.45;
+const LOW = PHONE ? 0.3 : 0.45;
 const REFINE = 12; // frames averaged once the view holds still
 let needLow = true, needFull = true, lastChange = 0, lowTarget = null, accTarget = null, accN = 0;
+let refineK = 0, refineY = 0; // the refinement pass being rendered and the row its next band starts at
 let renderMs = 0;
 
 const resolveProg = program(VS, `#version 300 es
@@ -3689,7 +3688,7 @@ void main() { outColor = vec4(texelFetch(uAcc, ivec2(gl_FragCoord.xy), 0).rgb * 
 
 function invalidate() {
   needLow = needFull = true;
-  accN = 0;
+  accN = refineY = 0;
   lastChange = performance.now();
 }
 
@@ -3732,13 +3731,20 @@ function renderView(scale = 1, quality = 1) {
 
 // Progressive refinement: frame k adds a sample with new sub-pixel and march offsets to a float
 // buffer, and the canvas shows the running average.
+// Renders the next band of pass k (up to FRAME_PX samples); returns true once the pass is complete
+// and shown.
 function refineView(k) {
   const w = canvas.width, h = canvas.height, m = viewMapping(w), t0 = performance.now();
   const values = sceneValues(); // before blending is on: it may re-render the atmosphere LUTs
   accTarget = fitTarget(accTarget, w, h, gl.RGBA16F);
+  if (k !== refineK) { refineK = k; refineY = 0; }
+  const y1 = Math.min(h, refineY + Math.max(1, Math.floor(FRAME_PX / w)));
   if (k > 0) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
-  drawSky(accTarget.fbo, w, h, m.pix0, m.step, values, { frame: k });
+  drawSky(accTarget.fbo, w, h, m.pix0, m.step, values, { frame: k, rows: [refineY, y1] });
   gl.disable(gl.BLEND);
+  refineY = y1 < h ? y1 : 0;
+  renderMs = performance.now() - t0;
+  if (refineY) return false;
   accN = k + 1;
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, w, h);
@@ -3747,7 +3753,7 @@ function refineView(k) {
   gl.bindTexture(gl.TEXTURE_2D, accTarget.tex);
   gl.uniform1f(resolveProg.u.uScale, 1 / accN);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
-  renderMs = performance.now() - t0;
+  return true;
 }
 
 // ─── Loupe ──────────────────────────────────────────────────────────────────
@@ -3869,7 +3875,7 @@ function busy(title, frac, meta) {
 }
 
 async function renderTiles(W, H, opts, onTile) {
-  const T = 512, values = sceneValues(), tile = target(T, T);
+  const T = PHONE ? 256 : 512, values = sceneValues(), tile = target(T, T);
   const px = new Uint8Array(T * T * 4), out = opts.into || new Uint8Array(W * H * 4);
   const total = Math.ceil(W / T) * Math.ceil(H / T);
   let done = 0, t0 = performance.now();
@@ -4989,6 +4995,7 @@ function frame(now) {
       const settling = now - lastChange < 150;
       if (needLow && settling) { renderView(LOW, 0.6); needLow = false; }
       else if (needFull && !settling) { refineView(0); needFull = needLow = false; }
+      else if (refineY && !settling) refineView(refineK);
       else if (thumbQueue.length && !settling) renderThumb(...thumbQueue.shift());
       else if (accN > 0 && accN < REFINE && !settling) refineView(accN);
     }
