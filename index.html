@@ -1317,8 +1317,9 @@ vec3 bodySurface(int type, vec3 n, vec3 ax, float seed, vec3 c1, vec3 c2, float 
     float cloud = smoothstep(0.52, 0.72, nz(cw * vec3(1.4, 2.6, 1.4) + o.yzx, fr * 2.0).r);
     return mix(alb, vec3(0.95), cloud * 0.85);
   }
-  // Lava world: dark crust broken by glowing fissures.
-  float crack = pow(1.0 - abs(nz(sp * 3.5 + o, fr * 3.5).a * 2.0 - 1.0), 12.0) * (1.0 - smoothstep(0.02, 0.08, fr * 3.5));
+  // Lava world: dark crust broken by glowing fissures. The fissure network fades out before its
+  // cells shrink to a few pixels, where its hairline cracks would only sparkle.
+  float crack = pow(1.0 - abs(nz(sp * 3.5 + o, fr * 3.5).a * 2.0 - 1.0), 12.0) * (1.0 - smoothstep(0.012, 0.04, fr * 3.5));
   emit = c2 * (crack * 3.0 + smoothstep(0.62, 0.8, relief) * 0.15);
   return c1 * (0.7 + 0.6 * n2.r);
 }
