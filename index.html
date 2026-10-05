@@ -3563,6 +3563,8 @@ function sceneValues(img) {
   return SCENE_UNIFORMS.map(([name, type, get]) => [name, type, get()]);
 }
 
+const BAND_PX = 1 << 16;
+
 function drawSky(fbo, w, h, pix0, step, values, opts = {}) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
   gl.viewport(0, 0, w, h);
@@ -3583,7 +3585,17 @@ function drawSky(fbo, w, h, pix0, step, values, opts = {}) {
   gl.uniform1i(sky.u.uSamples, opts.samples || 1);
   gl.uniform1i(sky.u.uFrame, opts.frame || 0);
   gl.uniform1f(sky.u.uQuality, (opts.quality ?? 1) * P.cQuality);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // Draw in horizontal bands, each flushed on its own. iOS aborts GPU work that runs too long,
+  // which left whole blocks unrendered (missing samples, stale pixels) in heavy scenes.
+  const rows = Math.max(1, Math.floor(BAND_PX / (w * (opts.samples || 1))));
+  if (rows >= h) { gl.drawArrays(gl.TRIANGLES, 0, 3); return; }
+  gl.enable(gl.SCISSOR_TEST);
+  for (let y = 0; y < h; y += rows) {
+    gl.scissor(0, y, w, Math.min(rows, h - y));
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.flush();
+  }
+  gl.disable(gl.SCISSOR_TEST);
 }
 
 // ─── Motion ─────────────────────────────────────────────────────────────────
