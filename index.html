@@ -1654,8 +1654,9 @@ const mat2 LAND_ROT = mat2(0.8, 0.6, -0.6, 0.8);
 float landNear() { return 1000.0 * uLandB.x; }
 float landFar() { return landNear() * (uLand.x > 3.5 ? 3.0 + 2.5 * uLand.w : 8.0 + 14.0 * uLand.w); }
 float curveDrop(float r) { return r * r / (2.0 * EARTH_R); }
-// Relief height per metre of distance, in units of tan(Height): hills, mountains, forest floor.
-float landGain() { return uLand.x < 1.5 ? 1.3 : uLand.x < 2.5 ? 1.8 : 0.45; }
+// Relief height per metre of distance, in units of tan(Height): hills, mountains, forest floor; none
+// for None and City, where only the volcano stands on the base plane.
+float landGain() { return uLand.x < 0.5 || uLand.x > 3.5 ? 0.0 : uLand.x < 1.5 ? 1.3 : uLand.x < 2.5 ? 1.8 : 0.45; }
 
 // Sky light on a surface facing n: mostly the part of the sky it faces, so a facade turned away
 // from a sunset stays dusky blue instead of catching the glow behind it.
@@ -1735,13 +1736,13 @@ float landHeight(vec2 p, float px, out vec2 g) {
   float r = length(p), type = uLand.x;
   float L = type < 1.5 ? 1700.0 : type < 2.5 ? 2600.0 : 1500.0;
   float A = tan(uLand.y * DEG) * clamp(r - 0.4 * landNear(), 0.6 * landNear(), 30000.0) * landGain();
-  int oct = int(clamp(log2(L / max(px, 1.0)), 2.0, type < 2.5 ? 9.0 : 5.0));
+  int oct = A > 0.0 ? int(clamp(log2(L / max(px, 1.0)), 2.0, type < 2.5 ? 9.0 : 5.0)) : 0;
   vec2 q = rot2(p, uLandB.y) / L + uLandB.z * vec2(0.71, 1.37);
   vec3 n = relief(q, oct, type < 1.5 ? 0.35 : type < 2.5 ? 0.6 + 1.4 * uLand.z : 0.2);
   float v = n.x + 0.42;
   float h = A * max(v, 0.0);
   g = v > 0.0 ? A * rot2(n.yz, -uLandB.y) / L : vec2(0.0);
-  if (type > 2.5) h += canopy(p, px, g);
+  if (type > 2.5 && type < 3.5) h += canopy(p, px, g);
   gPeak = 0.0;
   if (uPeak.x > 0.0) {
     // A stratovolcano: concave flanks scored by radial gullies, a flat crater rim on top.
@@ -1771,9 +1772,12 @@ float shoreEntry(vec3 ro, vec3 rd) {
   return c < 0.0 ? (-b + sqrt(max(b * b - vv * c, 0.0))) / vv : 0.0;
 }
 
-// Distance along the ray to the hills, mountains or forest, or -1.
+// Distance along the ray to the hills, mountains, forest or volcano, or -1.
 float landTrace(vec3 ro, vec3 rd, float fp) {
-  float far = landFar(), t = shoreEntry(ro, rd), kStep = uLand.x > 1.5 && uLand.x < 2.5 ? 0.4 : 0.5;
+  // With no relief (None, City) only the volcano is traced, out to its far side.
+  bool bare = landGain() <= 0.0;
+  float far = bare ? landNear() * 14.0 * (1.0 + tan(min(uPeak.z, 1.3))) : landFar();
+  float t = shoreEntry(ro, rd), kStep = uLand.x > 1.5 && uLand.x < 2.5 ? 0.4 : 0.5;
   // The steepest apparent slope anything can reach (relief stays below 1, so landHeight's v below
   // 1.42; the volcano adds its own): a ray climbing faster, above it, is clear.
   float top = tan(uLand.y * DEG) * landGain() * 1.42 + (uPeak.x > 0.0 ? tan(uPeak.x * DEG) : 0.0);
@@ -1784,14 +1788,18 @@ float landTrace(vec3 ro, vec3 rd, float fp) {
     if (r > far) break;
     vec2 g;
     float dy = p.y - (landHeight(p.xz, fp * t, g) - uSurf.y - curveDrop(r));
-    if (dy < 0.3 * fp * t) return dPrev < 1e8 ? mix(tPrev, t, clamp(dPrev / max(dPrev - dy, 1e-6), 0.0, 1.0)) : t;
+    if (dy < 0.3 * fp * t) {
+      // The bare base plane is no land: a ray that reaches it misses.
+      if (bare && gPeak < 0.5) return -1.0;
+      return dPrev < 1e8 ? mix(tPrev, t, clamp(dPrev / max(dPrev - dy, 1e-6), 0.0, 1.0)) : t;
+    }
     if (rd.y > top && p.y + uSurf.y > top * r + 40.0) break;
     tPrev = t;
     dPrev = dy;
     // Tree cones are steep: step finely inside the canopy band (trees stand at most 26 m) while
     // canopy() still draws single trees. Steps never shrink below a share of the distance, so rays
     // that skim the land all the way out still arrive within the loop.
-    float band = uLand.x > 2.5 && fp * t < 7.0 ? 26.0 : 0.0;
+    float band = uLand.x > 2.5 && uLand.x < 3.5 && fp * t < 7.0 ? 26.0 : 0.0;
     t += max(dy > band ? (dy - band) * kStep + band * 0.2 : dy * 0.2, max(fp, dy > band ? 0.01 : 0.003) * t + 0.5);
   }
   return -1.0;
@@ -1819,7 +1827,7 @@ vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
     alb = mix(alb, forest, smoothstep(0.32, 0.18, e + 0.08 * n1));
     float snow = smoothstep(1.0 - uPeak.w - 0.03, 1.0 - uPeak.w + 0.03, e + (gully - 0.5) * 0.22);
     alb = mix(alb, vec3(0.84, 0.86, 0.9), snow);
-  } else if (type > 2.5) {
+  } else if (type > 2.5 && type < 3.5) {
     // Forest: darker deep in each crown, a little lighter and warmer at the tips.
     alb = mix(forest, uLandColor * 0.5, 0.15) * (0.75 + 0.5 * hashL(floor(p.xz / 10.0)));
     ao = mix(0.35, 1.0, gCanopy);
@@ -2971,7 +2979,8 @@ ${GLSL_LAND}
 vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   vec3 col = physicalSky(d);
   if (d.y > -fp) {
-    float above = smoothstep(-fp, fp, d.y);
+    // A pixel on the horizon blends into the ground; reflected rays always leave the water upward.
+    float above = gMirror ? 1.0 : smoothstep(-fp, fp, d.y);
     vec3 Tv = skyExtinction(d.y);
     vec4 moon = uMoon.x > 0.0 ? moonDisk(d, fp) : vec4(0.0);
     vec4 body = uBodyN > 0 ? bodies(d, fp) : vec4(0.0);
@@ -2990,13 +2999,16 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
 
 vec3 viewRadiance(vec3 ro, vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   vec3 beacon = vec3(0.0);
-  if (uLand.x > 0.5 && d.y < 0.5 && !gNoLand) {
+  if ((uLand.x > 0.5 || uPeak.x > 0.0) && d.y < 0.5 && !gNoLand) {
     vec3 n;
     gBeacon = 0.0;
-    float t = uLand.x > 3.5 ? cityTrace(ro, d, fp, n) : landTrace(ro, d, fp);
+    // The city first; where it misses, or with hills, mountains or forest, the land and volcano.
+    bool city = uLand.x > 3.5;
+    float t = city ? cityTrace(ro, d, fp, n) : -1.0;
+    if (t < 0.0 && (!city || uPeak.x > 0.0)) { city = false; t = landTrace(ro, d, fp); }
     beacon = vec3(1.0, 0.07, 0.03) * gBeacon * 6.0 * uNightScale * uLandB.w;
     if (t > 0.0) {
-      vec3 c = uLand.x > 3.5 ? cityShade(ro, d, t, n, fp, amb) : landShade(ro, d, t, fp, amb);
+      vec3 c = city ? cityShade(ro, d, t, n, fp, amb) : landShade(ro, d, t, fp, amb);
       // Aerial perspective: Rayleigh-blue extinction plus haze over the distance, then fog.
       vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
       return beacon + applyFog(c * tr + horizonSky(d) * (1.0 - tr), d, t, amb);
