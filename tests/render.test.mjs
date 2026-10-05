@@ -177,6 +177,26 @@ function installHelpers() {
       const fresh = readFloat(accTarget.fbo, w, h);
       return { before: b64(before), black: b64(black), white: b64(white), fresh: b64(fresh), glError: gl.getError() };
     },
+    // Mean light the stars add (luminance, stars on minus off, after grading) over a w×h window of a
+    // 1920×1080 image of preset `name` at the given field of view, the window's top-left at (ox, oy).
+    starlight(name, fov, w, h, ox, oy) {
+      const W = 1920, H = 1080, look = PRESETS[presetIndex(name)];
+      const mean = on => {
+        Object.assign(P, lookParams(look), { fov, stars: on, vignette: 0, grain: 0 });
+        const values = sceneValues([W, H]), t = target(w, h, gl.RGBA16F);
+        for (let k = 0; k < 2; k++) {
+          if (k) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
+          drawSky(t.fbo, w, h, [ox, oy], 1, values, { frame: k });
+          gl.disable(gl.BLEND);
+        }
+        const f = readFloat(t.fbo, w, h);
+        t.free();
+        let s = 0;
+        for (let i = 0; i < w * h; i++) s += 0.2126 * f[i * 4] + 0.7152 * f[i * 4 + 1] + 0.0722 * f[i * 4 + 2];
+        return s / (2 * w * h);
+      };
+      return mean(true) - mean(false);
+    },
     // Frames the main view so the canvas shows exactly the whole capture image, as a thumbnail
     // does, and renders one sample per pixel (pass 0) at the thumbnail's ray-step quality (read
     // from renderThumb's source, which passes { quality: 0.8 }). Restores the framing afterwards.
@@ -580,6 +600,24 @@ try {
     }
     assert(!problems.length, problems.join('\n') + '\n' + notes.join('\n'));
     return `${name}: ` + notes.join('\n      ');
+  });
+
+  // A star's light is fixed on the sky: zooming spreads or gathers it, so the level the stars add holds
+  // across zoom, and from the centre to the stretched corner of a wide frame. (Before, it grew with
+  // the field of view squared and followed the local pixel scale: 15× from 40° to 120°, 5× toward the
+  // corner.)
+  await check('stars: their light holds across zoom and across a wide frame', async () => {
+    const name = names.includes('Deep Navy') ? 'Deep Navy' : names[0], [w, h] = [320, 200];
+    const at = (fov, ox, oy) => page.evaluate(a => __t.starlight(...a), [name, fov, w, h, ox, oy]);
+    const centre = [960 - w / 2, 540 - h / 2], zoom = {};
+    for (const fov of [40, 70, 120]) zoom[fov] = await at(fov, ...centre);
+    const corner = await at(110, 0, 0), middle = await at(110, ...centre);
+    const levels = Object.values(zoom), spread = Math.max(...levels) / Math.min(...levels), edge = corner / middle;
+    const note = `${name}: ${Object.entries(zoom).map(([f, v]) => `${f}° ${v.toFixed(4)}`).join(', ')} (×${spread.toFixed(2)}); 110° corner/centre ${edge.toFixed(2)}`;
+    assert(levels.every(v => v > 0), `no starlight: ${note}`);
+    assert(spread < 1.6, `starlight changes ×${spread.toFixed(2)} with zoom\n${note}`);
+    assert(edge > 0.7 && edge < 1.4, `corner/centre starlight ${edge.toFixed(2)}\n${note}`);
+    return note;
   });
 
   await check('no errors logged during the run', async () => {

@@ -416,6 +416,17 @@ const DEFAULTS = {
 };
 const P = { ...DEFAULTS };
 
+// Stars: their light is set at the angular scale of the default 84° lens (STAR.ref, where a star's
+// light spreads like a blur of STAR.energy of the frame); they are drawn at STAR.draw of the frame,
+// so they read as points, and zooming in past STAR.zoom× makes them bigger rather than brighter.
+const STAR = { ref: 2 * Math.tan(42 * DEG), energy: 4e-4, draw: 2.4e-4, zoom: 2 };
+
+// The frame's angular scale: the angle per image pixel at its centre times the image diagonal.
+function frameScale([W, H], p = P) {
+  const half = p.fov * DEG / 2;
+  return [2 * Math.tan(half), 2 * half, 4 * Math.tan(half / 2), Math.hypot(W, H) * TAU / W][p.proj];
+}
+
 const PROJECTIONS = [
   { title: 'Lens', min: 4, max: 150 },
   { title: 'Fisheye', min: 30, max: 360 },
@@ -487,7 +498,7 @@ const PRESETS = [
     sunElev: -13.5, sunHeading: 295, heading: 205, pitch: 9, fov: 70,
     ozone: 2, mie: 1.4, skyFill: 0.8,
     nightBright: 1.6, nightZenith: '#151640', nightHorizon: '#5d4f8f', nightCurve: 0.5, nightVibrance: 0.3, airglow: 0.02, lpStrength: 0,
-    starDensity: 0.7, starDepth: 0.85, starBright: 1.6, starSize: 0.75, starColor: 0.3,
+    starDensity: 0.7, starDepth: 0.85, starBright: 0.97, starSize: 0.75, starColor: 0.3,
     surfColorA: '#0d1424', surfColorB: '#0d1424', surfWaves: 0.2,
     land: 3, landHeight: 1.7, landLayers: 2, landColor: '#11131b', forestMix: 1, forestDensity: 0.95,
     peak: 7.5, peakHeading: 205, peakWidth: 24, peakSnow: 0.42,
@@ -505,27 +516,27 @@ const PRESETS = [
     sunElev: -30, heading: 160, pitch: 55, fov: 80,
     nightZenith: '#121436', nightHorizon: '#3a3260', nightBright: 1.3,
     lpStrength: 0.5, lpColor: '#b48fd0', lpFocus: 0.4,
-    starDensity: 0.45, starDepth: 0.6, starBright: 0.8,
+    starDensity: 0.45, starDepth: 0.6, starBright: 0.69,
     ...cloudLayer(0, 'stratocumulus', { Cover: 0.55, Dens: 0.5, Soft: 0.6 }),
     cLP: 2.2, cAmbient: 1.2, ev: 0.3,
   } },
   { name: 'Deep Navy', p: {
     sunElev: -35, heading: 30, pitch: 75, fov: 70,
     nightZenith: '#0b1236', nightHorizon: '#1a2150', nightBright: 1.3, nightVibrance: 0.4,
-    starDensity: 0.95, starDepth: 1, starBright: 1.25, starSize: 0.8, starColor: 0.3, starTint: '#c9c2ff', starTintAmt: 0.2,
+    starDensity: 0.95, starDepth: 1, starBright: 0.76, starSize: 0.8, starColor: 0.3, starTint: '#c9c2ff', starTintAmt: 0.2,
     extinction: 0.3, airglow: 0, lpStrength: 0,
   } },
   { name: 'Abyss', p: {
     sunElev: -40, heading: 60, pitch: 80, fov: 65,
     nightZenith: '#03050d', nightHorizon: '#0b1024', nightBright: 1.1, nightVibrance: 0.2, airglow: 0, lpStrength: 0,
-    starDensity: 0.5, starDepth: 0.95, starBright: 1.1, starSize: 0.8, starSizeVar: 0.7, starColor: 0.35,
+    starDensity: 0.5, starDepth: 0.95, starBright: 0.55, starSize: 0.8, starSizeVar: 0.7, starColor: 0.35,
     starTint: '#a9b8ff', starTintAmt: 0.15, extinction: 0.3, vignette: 0.25,
   } },
   { name: 'Violet Stream', p: {
     sunElev: -40, heading: 122, pitch: 72, fov: 70, roll: 40, skyRotation: 54, latitude: 30,
     nightZenith: '#0c0718', nightHorizon: '#150c26', nightBright: 1.2, nightVibrance: 0.6, airglow: 0, lpStrength: 0,
     mw: 0.9, mwWidth: 1.4, mwCore: 0.3, mwDust: 0.6, mwWarmth: 0.2, mwStars: 1.6,
-    starDensity: 1, starDepth: 1, starBright: 1.6, starSize: 0.85, starColor: 0.6, starTint: '#b49cff', starTintAmt: 0.25,
+    starDensity: 1, starDepth: 1, starBright: 0.97, starSize: 0.85, starColor: 0.6, starTint: '#b49cff', starTintAmt: 0.25,
     filter: '#9b7bff', filterAmt: 0.3,
   } },
   { name: 'Fire Sky', p: {
@@ -537,14 +548,14 @@ const PRESETS = [
     ev: -0.2, tone: 2, saturation: 1.1,
   } },
   { name: 'Milky Way Core', p: {
-    sunElev: -30, latitude: 30, skyRotation: 120, heading: 176, pitch: 25, fov: 95,
+    sunElev: -30, latitude: 30, skyRotation: 120, heading: 176, pitch: 25, fov: 95, starBright: 1.47,
     mw: 1.4, mwCore: 1.4, mwDust: 0.85, mwWarmth: 0.75, mwHII: 0.6, mwCoreColor: '#ffd29a', mwArmColor: '#e0e6ff',
     starDensity: 0.85, starDepth: 1, starSizeVar: 0.5,
     nightZenith: '#0b0e22', nightHorizon: '#1d1c38',
     surfWaves: 0.12, land: 2, landHeight: 3.5, landColor: '#0b0c12',
   } },
   { name: 'Aurora Lake', p: {
-    sunElev: -25, heading: 0, pitch: 14, fov: 95,
+    sunElev: -25, heading: 0, pitch: 14, fov: 95, starBright: 1.47,
     aurora: 1.4, auroraSpread: 0.45, starDensity: 0.85, starSizeVar: 0.5,
     surfWaves: 0.12, land: 2, landHeight: 3.5, landLayers: 2, landColor: '#0b0c12',
   } },
@@ -572,7 +583,7 @@ const PRESETS = [
     ...cloudLayer(0, 'cumulus', {}),
   } },
   { name: 'Star Trails', p: {
-    sunElev: -30, latitude: 35, heading: 0, pitch: 28, fov: 110, trails: 75, trailDensity: 0.5,
+    sunElev: -30, latitude: 35, heading: 0, pitch: 28, fov: 110, starBright: 1.59, trails: 75, trailDensity: 0.5,
     surface: 0, surfColorA: '#0d0e14', surfColorB: '#08090d',
     land: 3, landHeight: 2.2, landLayers: 2, landDepth: 0.4, landColor: '#0a0b10', forestMix: 1, forestDensity: 0.9,
   } },
@@ -583,7 +594,7 @@ const PRESETS = [
     land: 2, landHeight: 5, landColor: '#4a4f5c', landSnow: 1, landDepth: 2,
   } },
   { name: 'Deep Space', p: {
-    sunElev: -45, heading: 90, pitch: 89, fov: 80,
+    sunElev: -45, heading: 90, pitch: 89, fov: 80, starBright: 0.87,
     nightZenith: '#05030c', nightHorizon: '#05030c', airglow: 0, lpStrength: 0,
     neb: 1, nebScale: 0.55, nebWarp: 0.3, nebSeed: 6, nebA: '#e8466a', nebB: '#2a8fd0',
     mw: 0.3, starDensity: 1, starDepth: 1, starColor: 0.7, starSizeVar: 0.6,
@@ -591,7 +602,7 @@ const PRESETS = [
     contrast: 1.2, lift: -0.01,
   } },
   { name: 'Ringed Giant', p: {
-    sunElev: -22, heading: 200, pitch: 14, fov: 70,
+    sunElev: -22, heading: 200, pitch: 14, fov: 70, starBright: 0.6,
     b0On: true, b0Size: 30, b0Elev: 20, b0Heading: 200, b0Phase: 0.3, b0Light: 25, b0Lean: 14,
     starDensity: 0.8, starSizeVar: 0.5, mw: 0.6, surfWaves: 0.3,
   } },
@@ -613,7 +624,7 @@ const PRESETS = [
     surfWaves: 0.03, land: 2, landHeight: 7.5, landLayers: 3, landColor: '#5a524c', landSnow: 0.65, landDepth: 3, haze: 0.25,
   } },
   { name: 'Twin Moons', p: {
-    sunElev: -10, sunHeading: 260, heading: 230, pitch: 8, fov: 70,
+    sunElev: -10, sunHeading: 260, heading: 230, pitch: 8, fov: 70, starBright: 0.6,
     surface: 5, surfColorA: '#d8a874', surfColorB: '#5a3520', surfWind: 310, surfScale: 1.4, relief: 1.8, eyeHeight: 12,
     b0On: true, b0Type: 4, b0ColorA: '#1e4f8c', b0ColorB: '#6a7a3c', b0Atmo: 0.9, b0Ring: 0, b0Size: 20, b0Elev: 14, b0Heading: 208, b0Phase: 0.62, b0Light: -10,
     b1On: true, b1Type: 2, b1ColorA: '#c47c45', b1ColorB: '#6d3f25', b1Atmo: 0.15, b1Size: 9, b1Elev: 17, b1Heading: 250, b1Phase: 0.5, b1Light: -10,
@@ -638,11 +649,17 @@ const PRESETS = [
   } },
 ];
 
-// Looks saved before v2 stored only values that differed from the defaults of the time.
+// Looks saved before v2 stored only values that differed from the defaults of the time. Before v3,
+// star light grew with the field of view; v3 keeps it, so older looks get the brightness they showed.
 const LEGACY = { surface: 0, surfColorA: '#1b1c21', surfColorB: '#121317', surfReflect: 0, surfWaves: 0.5 };
+function starsV3(p) {
+  const q = { ...DEFAULTS, ...p }, k = frameScale([2, 1], q) / STAR.ref;
+  return { ...p, starBright: Math.round(clamp(q.starBright * (q.trails > 0 ? k : k * k), 0, 4) * 100) / 100 };
+}
 const savedLooks = store('horizon-looks');
 const looks = (Array.isArray(savedLooks) ? savedLooks : []).filter(l => l && l.name && l.p)
-  .map(l => l.v ? l : { name: l.name, v: 2, p: { ...LEGACY, ...l.p } });
+  .map(l => l.v ? l : { name: l.name, v: 2, p: { ...LEGACY, ...l.p } })
+  .map(l => l.v >= 3 ? l : { name: l.name, v: 3, p: starsV3(l.p) });
 
 function lookParams(look) {
   return { ...DEFAULTS, ...look.p };
@@ -661,7 +678,7 @@ function applyLook(look) {
 }
 
 function saveLook(name) {
-  looks.push({ name, v: 2, p: { ...P } });
+  looks.push({ name, v: 3, p: { ...P } });
   store('horizon-looks', looks);
   buildLookStrip();
 }
@@ -740,7 +757,9 @@ const DEVICES = [
 ];
 const MAX_SIDE = 8192;
 
-const C = Object.assign({ ratio: 16 / 9, long: 3840, format: 'png', samples: 1, grid: true, fps: 30, seconds: 8 }, store('horizon-capture'));
+// Quality: 4 samples per pixel (Standard) or 16 (Supersampled). Settings saved before v2 had 1 and 4.
+const C = Object.assign({ ratio: 16 / 9, long: 3840, format: 'png', samples: 4, grid: true, fps: 30, seconds: 8 }, store('horizon-capture'));
+if (C.v !== 2) C.samples = C.samples > 1 ? 16 : 4;
 C.on = false;
 C.loupe = false;
 
@@ -754,7 +773,7 @@ function setCapture(patch) {
   Object.assign(C, patch);
   C.long = clamp(Math.round(C.long), 64, MAX_SIDE);
   const { ratio, long, format, samples, grid, fps, seconds } = C;
-  store('horizon-capture', { ratio, long, format, samples, grid, fps, seconds });
+  store('horizon-capture', { ratio, long, format, samples, grid, fps, seconds, v: 2 });
   layout();
   syncUI();
 }
@@ -1092,17 +1111,16 @@ float cells(vec3 p, float base, uint salt) {
   return clamp(1.0 - (w1 * 0.625 + w2 * 0.25 + w3 * 0.125) * 1.15, 0.0, 1.0);
 }
 
+// Octaves stop at 32 per tile (4 texels per cycle): finer ones sit at the texel spacing, where
+// trilinear filtering turns them into streaks and stair steps wherever the texture is magnified.
+// Shaders reach finer detail by sampling at larger scales.
 void main() {
   vec3 p = vec3(gl_FragCoord.xy / ${NOISE_N}.0, uSlice);
-  outColor = vec4(fbm(p, 4.0, 6, 11u), cells(p, 4.0, 23u), cells(p, 8.0, 37u), fbm(p, 8.0, 5, 41u));
+  outColor = vec4(fbm(p, 4.0, 4, 11u), cells(p, 4.0, 23u), cells(p, 8.0, 37u), fbm(p, 8.0, 3, 41u));
 }`;
 
-const GLSL_NIGHT = `
-vec4 nz(vec3 q, float rate) {
-  if (DBG(DBG_NOISE)) return vec4(0.5);
-  return textureLod(uNoise3, q, log2(max(rate * ${NOISE_N}.0, 1.0)));
-}
-
+// The star population, shared by the sky shader and the pass that averages it (starStats).
+const GLSL_STAR = `
 vec3 blackbody(float t) {
   t *= 0.01;
   float r = t <= 66.0 ? 1.0 : clamp(1.292936 * pow(t - 60.0, -0.1332047), 0.0, 1.0);
@@ -1111,12 +1129,31 @@ vec3 blackbody(float t) {
   return pow(vec3(r, g, b), vec3(2.2));
 }
 
-vec3 starColor(inout uint h) {
-  float r = rnd(h), s = rnd(h);
+// A star's colour from two uniform numbers: its temperature band and its place in the band.
+vec3 starColor(float r, float s) {
   float t = r < 0.08 ? mix(2900.0, 4200.0, s) : r < 0.42 ? mix(4800.0, 6600.0, s) : r < 0.8 ? mix(6600.0, 10000.0, s) : mix(10000.0, 26000.0, s);
   vec3 c = blackbody(t * exp2(-uStarLook.y * 0.8)) / blackbody(5800.0);
   c = mix(vec3(1.0), c / max(luma(c), 1e-4), uStarLook.x);
   return mix(c, uStarTint.rgb / max(luma(uStarTint.rgb), 1e-4), uStarTint.a);
+}
+
+// A star of brightness u (0..1, most near 0) in layer L, where gain is the Milky Way's boost: its
+// flux and its blur, relative to the layer's. Size Variation spreads bright stars wider and shrinks
+// faint ones toward a point.
+vec2 starShape(float u, float L, float gain) {
+  float a = (0.2 + 0.8 * u) * gain;
+  float f = uStars.z * 2.4 * pow(0.42, L) * a;
+  return vec2(a, (0.8 + 0.3 * u) * mix(1.0, clamp(pow(f / (uStars.z * 0.4 + 1e-4), 0.4), 0.45, 3.0), uSpikes.w));
+}
+`;
+
+const GLSL_NIGHT = `
+// The noise tile repeats; once it shrinks to a few pixels the repeats show as a lattice, so the
+// sample fades to the tile's average from 16 pixels per tile down to 4.
+vec4 nz(vec3 q, float rate) {
+  if (DBG(DBG_NOISE)) return vec4(0.5);
+  float l = log2(max(rate * ${NOISE_N}.0, 1.0));
+  return mix(textureLod(uNoise3, q, l), uNoiseMean, smoothstep(3.0, 5.0, l));
 }
 
 vec3 faceDir(int face, vec2 uv) {
@@ -1133,11 +1170,15 @@ bool gMirror = false; // tracing a reflection: sun and moon disks come from glin
 bool gNoLand = false; // reflection ray that would really meet another wave
 float gShade = 1.0;   // tree shadow on the patch of ground being shaded
 
-float starSigma(float fpOut) { return uStars.w * 4e-4 * length(uImg) * fpOut; }
+// A star's light is fixed on the sky, while its drawn size follows the frame and is the same across it
+// (uStarFrame.x): zooming spreads or gathers the same light, so the sky's brightness and colour hold
+// at every zoom and over a wide, stretched frame. uStarFrame.y scales a star's core to keep its light;
+// .z is the zoom alone, for glows, spikes and trails, which keep the frame-relative size they had.
+float starSigma() { return uStars.w * uStarFrame.x; }
 
 const float STAR_CELLS[7] = float[7](8.0, 20.0, 48.0, 110.0, 250.0, 560.0, 1250.0);
 
-vec3 stars(vec3 p, float fp, float fpOut, float boost, vec3 rightC, vec3 upC) {
+vec3 stars(vec3 p, float fp, float boost, vec3 rightC, vec3 upC) {
   vec3 a = abs(p);
   int face;
   vec2 uv;
@@ -1145,7 +1186,7 @@ vec3 stars(vec3 p, float fp, float fpOut, float boost, vec3 rightC, vec3 upC) {
   else if (a.y >= a.z) { face = p.y > 0.0 ? 2 : 3; uv = p.xz / a.y; }
   else { face = p.z > 0.0 ? 4 : 5; uv = p.xy / a.z; }
   vec2 w = atan(uv) * (2.0 / PI) + 0.5;
-  float sigma0 = starSigma(fpOut);
+  float sigma0 = starSigma(), K = uStarFrame.y;
   float pix2 = 0.16 * fp * fp;
   mat2 spin = mat2(cos(uSpikes.y), sin(uSpikes.y), -sin(uSpikes.y), cos(uSpikes.y));
   vec3 sum = vec3(0.0);
@@ -1174,27 +1215,30 @@ vec3 stars(vec3 p, float fp, float fpOut, float boost, vec3 rightC, vec3 upC) {
           uint h = hash3u(uvec3(uvec2(cell), uint(face * 8 + L)) ^ uvec3(uSeed));
           float e = rnd(h);
           if (e > pEff + 0.02) continue;
-          float exist = clamp((pEff - e) * 25.0 + 0.5, 0.0, 1.0);
-          vec2 sw = (cell + 0.15 + 0.7 * vec2(rnd(h), rnd(h))) / N * 2.0 - 1.0;
-          vec3 dv = p - normalize(faceDir(face, tan(sw * (0.25 * PI))));
+          vec2 sw = (cell + 0.15 + 0.7 * vec2(rnd(h), rnd(h))) / N * 2.0 - 1.0, st = tan(sw * (0.25 * PI));
+          // Cube cells shrink toward the face edges; thin the stars there so they spread evenly.
+          float area = (1.0 + st.x * st.x) * (1.0 + st.y * st.y) * pow(1.0 + dot(st, st), -1.5);
+          float exist = clamp((pEff * area - e) * 25.0 + 0.5, 0.0, 1.0);
+          if (exist <= 0.0) continue;
+          vec3 dv = p - normalize(faceDir(face, st));
           float r2 = dot(dv, dv);
-          float u = pow(rnd(h), 3.0);
-          float f = flux0 * (0.2 + 0.8 * u) * gain;
-          // Size Variation: brighter stars spread wider, fainter ones shrink toward a point.
-          float sig = sigL * (0.8 + 0.3 * u) * mix(1.0, clamp(pow(f / (uStars.z * 0.4 + 1e-4), 0.4), 0.45, 3.0), uSpikes.w);
+          vec2 shape = starShape(pow(rnd(h), 3.0), float(L), gain);
+          float f = flux0 * shape.x, sig = sigL * shape.y;
           float se2 = sig * sig + pix2;
           if (!bright && r2 > 30.0 * se2) continue;
-          vec3 col = starColor(h) * f * exist;
+          float cr = rnd(h), cs = rnd(h);
+          vec3 col = starColor(cr, cs) * f * exist;
           col *= 1.0 + twinkleAmt * sin(uTime.y * (5.0 + 7.0 * rnd(h)) + rnd(h) * TAU);
-          vec3 c = col * exp(-0.5 * r2 / se2) * (sig * sig / se2);
+          vec3 c = col * exp(-0.5 * r2 / se2) * (K * sig * sig / se2);
           if (bright) {
-            c += col * uStarLook.z * 0.05 * exp(-sqrt(r2) / (sigma0 * 7.0 + fp));
+            float gs = sigma0 * 11.7 + fp, Z = uStarFrame.z * uStarFrame.z;
+            c += col * uStarLook.z * 0.05 * exp(-sqrt(r2) / gs) * Z * pow(sigma0 * 11.7 / gs, 2.0);
             if (uSpikes.x > 0.0) {
               vec2 o = spin * vec2(dot(dv, rightC), dot(dv, upC));
-              float len = sigma0 * 30.0 * uSpikes.z * sqrt(f);
+              float len = sigma0 * 50.0 * uSpikes.z * sqrt(f);
               float wd = sqrt(se2) * 0.5;
               float sp = exp(-abs(o.y) / wd - abs(o.x) / len) + exp(-abs(o.x) / wd - abs(o.y) / len);
-              c += col * uSpikes.x * 0.35 * sp * sig / sqrt(se2);
+              c += col * uSpikes.x * 0.35 * sp * Z * sig / sqrt(se2);
             }
           }
           layer += c;
@@ -1202,20 +1246,22 @@ vec3 stars(vec3 p, float fp, float fpOut, float boost, vec3 rightC, vec3 upC) {
       }
     }
     if (lod > 0.0) {
-      float avg = pEff * flux0 * gain * 0.4 * TAU * sigL * sigL / (cellAng * cellAng);
-      layer = mix(layer, vec3(1.0, 0.96, 0.92) * avg, lod);
+      // Too dense to draw: the stars' average, in their average colour.
+      vec4 mean = texelFetch(uStarStats, ivec2(L, 0), 0);
+      float avg = pEff * flux0 * gain * K * TAU * sigL * sigL * mean.a / (cellAng * cellAng);
+      layer = mix(layer, mean.rgb * avg, lod);
     }
     sum += layer * layerW;
   }
   return sum;
 }
 
-vec3 starTrails(vec3 p, float fp, float fpOut) {
+vec3 starTrails(vec3 p, float fp) {
   float rho = acos(clamp(p.z, -1.0, 1.0));
   float psi = atan(p.y, p.x);
   const float DR = 0.35 * DEG;
   float k0 = floor(rho / DR);
-  float sigma0 = starSigma(fpOut);
+  float sigma0 = starSigma(), K = uStarFrame.z;
   float pix2 = 0.16 * fp * fp;
   float L = uTrails.x;
   vec3 sum = vec3(0.0);
@@ -1229,7 +1275,7 @@ vec3 starTrails(vec3 p, float fp, float fpOut) {
       uint h = hash3u(uvec3(uint(k), uint(j), uSeed ^ 0x5bd1e995u));
       float r = (k + 0.1 + 0.8 * rnd(h)) * DR;
       float f = uTrails.z * (0.06 + 1.4 * pow(rnd(h), 6.0));
-      float sig = sigma0 * (0.75 + 0.3 * sqrt(f));
+      float sig = sigma0 * (1.25 + 0.5 * sqrt(f));
       float se2 = sig * sig + pix2;
       float dr = rho - r;
       if (dr * dr > 25.0 * se2) continue;
@@ -1239,7 +1285,8 @@ vec3 starTrails(vec3 p, float fp, float fpOut) {
       float span = smoothstep(-se, se, a * arc) * smoothstep(-se, se, (L - a) * arc);
       if (span <= 0.0) continue;
       float fade = 0.55 + 0.45 * clamp(a / L, 0.0, 1.0);
-      sum += starColor(h) * f * exp(-0.5 * dr * dr / se2) * (sig / se) * span * fade;
+      float cr = rnd(h), cs = rnd(h);
+      sum += starColor(cr, cs) * f * exp(-0.5 * dr * dr / se2) * (K * sig / se) * span * fade;
     }
   }
   return sum;
@@ -1259,12 +1306,13 @@ vec3 milkyWay(vec3 p, float fp, out float boost, out float clear) {
   clear = 1.0;
   if (abs(b) > w * 5.0 + 0.35) return vec3(0.0);
   vec3 o = vec3(0.37, 0.11, 0.73) + uMWLook.z * vec3(0.193, 0.317, 0.071);
-  // Star clouds: billowy brightness at several scales, plus a fine grain of unresolved stars.
-  vec3 g = vec3(dot(p, GC), dot(p, gy), dot(p, gnp) * 2.4);
-  float n1 = nz(g * 1.3 + o, 1.3 * fp).r;
-  float n2 = nz(g * 4.1 + o.yzx, 4.1 * fp).r;
-  float n3 = nz(g * 13.0 + o.zxy, 13.0 * fp).r;
-  float n4 = nz(g * 41.0 + o, 41.0 * fp).r;
+  // Star clouds: billowy brightness at several scales, plus a fine grain of unresolved stars. The
+  // noise is squashed across the plane, so its filtering follows that, the finest axis.
+  vec3 g = vec3(dot(p, GC), dot(p, gy), dot(p, gnp) * 1.6);
+  float n1 = nz(g * 1.3 + o, 2.1 * fp).r;
+  float n2 = nz(g * 4.1 + o.yzx, 6.6 * fp).r;
+  float n3 = nz(g * 13.0 + o.zxy, 21.0 * fp).r;
+  float n4 = nz(g * 41.0 + o, 66.0 * fp).r;
   float bw = b + (n1 - 0.5) * w * 0.8 + (n2 - 0.5) * w * 0.25;
   float band = exp(-0.5 * bw * bw / (w * w));
   float halo = exp(-0.5 * b * b / (9.0 * w * w)) * 0.12;
@@ -1276,9 +1324,9 @@ vec3 milkyWay(vec3 p, float fp, out float boost, out float clear) {
   // Dust: ridged filaments stretched along the plane, and the Great Rift running from the core
   // toward Cygnus a little off the midplane.
   vec3 gd = vec3(dot(p, GC), dot(p, gy), dot(p, gnp) * 2.2);
-  float f1 = nz(gd * 2.4 + o.zxy, 2.4 * fp).a;
-  float f2 = 1.0 - abs(nz(gd * 7.0 + o.yzx, 7.0 * fp).a * 2.0 - 1.0);
-  float f3 = nz(gd * 21.0 + o, 21.0 * fp).a;
+  float f1 = nz(gd * 2.4 + o.zxy, 5.3 * fp).a;
+  float f2 = 1.0 - abs(nz(gd * 7.0 + o.yzx, 15.4 * fp).a * 2.0 - 1.0);
+  float f3 = nz(gd * 21.0 + o, 46.0 * fp).a;
   float dustN = f1 * 0.55 + f2 * 0.3 + f3 * 0.15;
   float rb = b - w * (0.15 + 0.22 * (n1 - 0.5) + 0.12 * sin(l * 1.7 + o.x * 6.0));
   float rift = exp(-0.5 * rb * rb / (0.12 * w * w)) * smoothstep(-0.35, 0.15, l) * smoothstep(2.1, 0.9, l);
@@ -1291,7 +1339,7 @@ vec3 milkyWay(vec3 p, float fp, out float boost, out float clear) {
   vec3 col = mix(uMWArm, uMWCore, warm);
   col = mix(col, col * vec3(1.0, 0.6, 0.4), clamp(dust * 1.8, 0.0, 1.0) * 0.6);
   // Pink HII regions sprinkled along the plane, thickest toward the core.
-  float hii = smoothstep(0.8, 0.95, nz(g * 9.0 + o.yzx + 5.3, 9.0 * fp).g) * band * (0.35 + toward) * (1.0 - dust) * uMWB.y;
+  float hii = smoothstep(0.8, 0.95, nz(g * 9.0 + o.yzx + 5.3, 14.4 * fp).g) * band * (0.35 + toward) * (1.0 - dust) * uMWB.y;
   return (col * lum + vec3(1.0, 0.3, 0.42) * hii * 0.7) * uMW.x * 0.1;
 }
 
@@ -1520,9 +1568,9 @@ vec3 galaxy(vec3 d, float fp) {
   return col * uGal.x * 0.2;
 }
 
-vec3 meteors(vec3 d, float fp, float fpOut) {
+vec3 meteors(vec3 d, float fp) {
   vec3 sum = vec3(0.0);
-  float sigma0 = starSigma(fpOut) * 0.8;
+  float sigma0 = starSigma() * 1.33;
   float se = sqrt(sigma0 * sigma0 + 0.16 * fp * fp);
   for (int i = 0; i < 12; i++) {
     if (i >= uMeteorN) break;
@@ -1549,7 +1597,7 @@ vec3 meteors(vec3 d, float fp, float fpOut) {
   return sum;
 }
 
-vec3 nightLayers(vec3 d, float fp, float fpOut) {
+vec3 nightLayers(vec3 d, float fp) {
   vec3 p = d * uCel;
   twinkleAmt = uTime.w * 0.35 * (1.3 - d.y);
   float boost = 0.0, clear = 1.0;
@@ -1557,7 +1605,7 @@ vec3 nightLayers(vec3 d, float fp, float fpOut) {
   if (uMW.x > 0.0) c += milkyWay(p, fp, boost, clear);
   if (uNeb.x > 0.0) { vec4 nb = nebula(p, fp); c += nb.rgb; clear *= 1.0 - nb.a; }
   if (uGal.x > 0.0) c += galaxy(d, fp) * clear;
-  if (uStars.x > 0.0) c += clear * (uTrails.x > 0.0 ? starTrails(p, fp, fpOut) : stars(p, fp, fpOut, boost * uMW.x, uRight * uCel, uUp * uCel));
+  if (uStars.x > 0.0) c += clear * (uTrails.x > 0.0 ? starTrails(p, fp) : stars(p, fp, boost * uMW.x, uRight * uCel, uUp * uCel));
   return c;
 }
 `;
@@ -1575,7 +1623,7 @@ float hg(float c, float g) {
 // A layer's field in cell units: x is the puff field before thresholding, y the local coverage.
 // Weather (two very large octaves) makes coverage and cell size wander across the sky, and every
 // octave is rotated and scaled by an irrational ratio, so the tiled noise never visibly repeats.
-vec2 cloudField(int i, vec2 xz, float rate) {
+vec2 cloudField(int i, vec2 xz, float h, float rate) {
   vec4 B = uCloudB[i], Cc = uCloudC[i], Dd = uCloudD[i];
   vec2 q = xz + Dd.zw;
   vec2 r = vec2(dot(q, Dd.xy), dot(q, vec2(-Dd.y, Dd.x))) / B.x;
@@ -1592,16 +1640,19 @@ vec2 cloudField(int i, vec2 xz, float rate) {
     r += wv * B.w * 1.6;
   }
   float big = nz(vec3(rot2(r, 1.1) * 0.13, m * 0.5) + o, 0.13 * rate).r;
-  float n1 = nz(vec3(r * 0.5, m) + o.yzx, 0.5 * rate).r;
-  float base = mix(n1, nz(vec3(rot2(r, 0.83) * 1.37, m * 1.3) + o.zxy, 1.37 * rate).a, 0.3);
-  if (B.y > 0.0) base = mix(base, nz(vec3(rot2(r, 0.4) * 0.53, m) + o.zxy, 0.53 * rate).g * 0.6 + base * 0.4, B.y);
-  if (B.z > 0.0) base = mix(base, base * 0.45 + nz(vec3(rot2(r, 1.9) * 2.3, m * 1.5) + o, 2.3 * rate).b * 0.75 - 0.08, B.z);
+  // Height h (km above the base) runs along the lookups' third axis at their own scale, so the
+  // shapes change up through a cloud instead of standing as columns extruded from its base.
+  float z = h / B.x;
+  float n1 = nz(vec3(r * 0.5, m + z * 0.5) + o.yzx, 0.5 * rate).r;
+  float base = mix(n1, nz(vec3(rot2(r, 0.83) * 1.37, m * 1.3 + z * 1.37) + o.zxy, 1.37 * rate).a, 0.3);
+  if (B.y > 0.0) base = mix(base, nz(vec3(rot2(r, 0.4) * 0.53, m + z * 0.53) + o.zxy, 0.53 * rate).g * 0.6 + base * 0.4, B.y);
+  if (B.z > 0.0) base = mix(base, base * 0.45 + nz(vec3(rot2(r, 1.9) * 2.3, m * 1.5 + z * 2.3) + o, 2.3 * rate).b * 0.75 - 0.08, B.z);
   return vec2(base, uCloudA[i].x + (big - 0.5) * 0.5 + (w - 0.5) * 1.3 * vary);
 }
 
 float cloudDensity(int i, vec3 pw, float hf, float rate, bool detailed) {
   if (hf < 0.0 || hf > 1.0) return 0.0;
-  vec2 f = cloudField(i, pw.xz, rate);
+  vec2 f = cloudField(i, pw.xz, clamp(hf, 0.0, 1.0) * uCloudA[i].w, rate);
   float puff = uCloudB[i].y, soft = uCloudC[i].y;
   // Flat bases and domed tops for heaped clouds, lens shapes for thin layers: only the strongest
   // part of the field reaches the top and bottom, so puffs are rounded rather than extruded. Edges
@@ -2924,6 +2975,7 @@ const SCENE_UNIFORMS = [
   ['uCel', 'mat3', () => D.cel],
   ['uSeed', 'uint', () => Math.imul(P.starSeed, 2654435761) >>> 0],
   ['uStars', 'vec4', () => [P.stars ? P.starDensity : 0, P.starDepth, P.starBright, P.starSize]],
+  ['uStarFrame', 'vec3', () => D.starFrame],
   ['uStarLook', 'vec4', () => [P.starColor, P.starWarmth, P.starGlow, P.extinction]],
   ['uStarTint', 'vec4', () => [...hexLinear(P.starTint), P.starTintAmt]],
   ['uSpikes', 'vec4', () => [P.spikes, P.spikeAngle * DEG, P.spikeLength, P.starSizeVar]],
@@ -2976,7 +3028,10 @@ const SCENE_UNIFORMS = [
   ['uHighTint', 'vec4', () => [...hexSRGB(P.highTint), P.highAmt]],
   ['uFilter', 'vec4', () => [...hexSRGB(P.filter), P.filterAmt]],
   ['uLens', 'vec4', () => [P.vignette, P.grain, P.grainSize, 0]],
+  ['uNoiseMean', 'vec4', () => noise3.mean],
 ];
+
+const SCENE_UNIFORM_DECLS = () => SCENE_UNIFORMS.map(([n, t, , len]) => `uniform ${t} ${n}${len ? `[${len}]` : ''};`).join('\n');
 
 const VS = `#version 300 es
 void main() {
@@ -3006,11 +3061,11 @@ const GLSL_FEATURE_CALLS = `
 #define AURORA(d, fp, j) vec3(0.0)
 #endif
 #if HAS_NIGHT
-#define NIGHT_LAYERS(d, fp, fo) nightLayers(d, fp, fo)
-#define METEORS(d, fp, fo) meteors(d, fp, fo)
+#define NIGHT_LAYERS(d, fp) nightLayers(d, fp)
+#define METEORS(d, fp) meteors(d, fp)
 #else
-#define NIGHT_LAYERS(d, fp, fo) vec3(0.0)
-#define METEORS(d, fp, fo) vec3(0.0)
+#define NIGHT_LAYERS(d, fp) vec3(0.0)
+#define METEORS(d, fp) vec3(0.0)
 #endif
 #if HAS_CLOUDS
 #define CLOUDS(d, fp, j, amb) clouds(d, fp, j, amb)
@@ -3066,9 +3121,10 @@ const GLSL_FEATURE_CALLS = `
 const SKY_FS = (diag = false, fast = false, feats = ALL_FEATURES) => `#version 300 es
 ${diag ? '#define DIAG\n' : ''}${fast ? '#define FASTMATH\n' : ''}${FEATURES.map(k => `#define HAS_${k} ${feats[k] ? 1 : 0}\n#define F_${k} ${feats[k] ? 'true' : 'false'}\n`).join('')}precision highp float;
 precision highp int;
-${SCENE_UNIFORMS.map(([n, t, , len]) => `uniform ${t} ${n}${len ? `[${len}]` : ''};`).join('\n')}
+${SCENE_UNIFORM_DECLS()}
 uniform sampler2D uTrans, uSkySun, uSkyMoon;
 uniform highp sampler3D uNoise3;
+uniform highp sampler2D uStarStats;
 uniform vec2 uPix0;
 uniform float uPixStep, uTargetH, uSnap, uQuality;
 uniform int uSamples, uFrame;
@@ -3076,6 +3132,7 @@ out vec4 outColor;
 ${GLSL_COMMON}
 ${GLSL_ATMO}
 ${GLSL_NOISE}
+${GLSL_STAR}
 ${GLSL_NIGHT}
 
 vec3 viewDir(vec2 img, out float valid) {
@@ -3152,7 +3209,7 @@ ${GLSL_CLOUDS}
 ${GLSL_LAND}
 ${GLSL_FEATURE_CALLS}
 
-vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
+vec3 skyAbove(vec3 d, float fp, float jitter, vec3 amb) {
   vec3 col = physicalSky(d);
   if (d.y > -fp && !DBG(DBG_CELESTIAL)) {
     // A pixel on the horizon blends into the ground; reflected rays always leave the water upward.
@@ -3162,7 +3219,7 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
     vec4 body = F_BODIES && uBodyN > 0 ? BODIES(d, fp) : vec4(0.0);
     vec3 night = nightSky(d) + AURORA(d, fp, jitter);
     // Stars and deep-sky layers are invisible against daylight; skip their cost.
-    if (F_NIGHT && uNightScale > 2e-3) night += (NIGHT_LAYERS(d, fp, fpOut) * (1.0 - moon.a) * (1.0 - body.a) + METEORS(d, fp, fpOut)) * Tv;
+    if (F_NIGHT && uNightScale > 2e-3) night += (NIGHT_LAYERS(d, fp) * (1.0 - moon.a) * (1.0 - body.a) + METEORS(d, fp)) * Tv;
     col += (night * uNightScale + (moon.rgb + body.rgb * (1.0 - moon.a)) * Tv) * above;
     if (!gMirror) col += sunLight(d, fp) * above;
   }
@@ -3173,7 +3230,7 @@ vec3 skyAbove(vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
   return applyFog(col, d, 60000.0, amb);
 }
 
-vec3 viewRadiance(vec3 ro, vec3 d, float fp, float fpOut, float jitter, vec3 amb) {
+vec3 viewRadiance(vec3 ro, vec3 d, float fp, float jitter, vec3 amb) {
   vec3 beacon = vec3(0.0);
   if (F_LAND && (uLand.x > 0.5 || uPeak.x > 0.0) && d.y < 0.5 && !gNoLand && !DBG(DBG_LAND)) {
     vec3 n = vec3(0.0, 1.0, 0.0);
@@ -3190,13 +3247,13 @@ vec3 viewRadiance(vec3 ro, vec3 d, float fp, float fpOut, float jitter, vec3 amb
       return beacon + applyFog(c * tr + horizonSky(d) * (1.0 - tr), d, t, amb);
     }
   }
-  return beacon + skyAbove(d, fp, fpOut, jitter, amb);
+  return beacon + skyAbove(d, fp, jitter, amb);
 }
 
 // Everything a view ray meets, front to back: trees, grass blades, then the ground (water,
 // grass canopy or plain ground) or the sky and landscape. Water continues as a second pass along
 // the reflected ray. Each heavy routine has exactly one call site, since GLSL inlines them all.
-vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
+vec3 sceneColor(vec3 d, float fp, float jitter) {
   vec3 amb = skyAmbient();
   gSunE = uSunScale * transmittance(OBS, uSunDir.y);
   gMoonE = uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0));
@@ -3280,7 +3337,7 @@ vec3 sceneColor(vec3 d, float fp, float fpOut, float jitter) {
       acc += T * (terrain ? TERRAIN_SHADE(d, Dm, fp, amb) : plainGround(d.xz * Dm, rate) * (directLight(vec3(0.0, 1.0, 0.0)) * gShade + amb));
       break;
     }
-    acc += T * viewRadiance(ro, rd, fp, fpOut, jitter, amb);
+    acc += T * viewRadiance(ro, rd, fp, jitter, amb);
     break;
   }
   // Globals outlive the call: the next sample of this pixel must start clean.
@@ -3327,7 +3384,12 @@ vec3 softTone(vec3 c) {
   float l = luma(c);
   vec3 o = c * ((1.0 + l / 16.0) / (1.0 + l));
   float m = max(o.r, max(o.g, o.b));
-  return m > 1.0 ? mix(o / m, vec3(1.0), clamp(1.0 - 1.0 / m, 0.0, 1.0) * 0.5) : o;
+  if (m <= 1.0) return o;
+  // Out of range: the hue at full brightness, fading to white at the rate that carries the colour's
+  // brightness on smoothly (a bend there ringed every bright glow and left the sun a dull disc). Pale
+  // colours whiten fast; deep ones keep their colour until much brighter.
+  float a = luma(o) / m;
+  return mix(o / m, vec3(1.0), 1.0 - exp((1.0 - m) * a / max(1.0 - a, 1e-3)));
 }
 
 vec3 tonemap(vec3 c) {
@@ -3385,8 +3447,7 @@ vec3 shadePixel(vec2 img, float jitter) {
   if (DBG(DBG_GRAD)) return (d * 0.5 + 0.5) * valid;
   vec3 dx = viewDir(img + vec2(1.0, 0.0), v1) - d;
   vec3 dy = viewDir(img + vec2(0.0, 1.0), v2) - d;
-  float fpOut = sqrt(length(dx) * length(dy));
-  vec3 c = sceneColor(d, fpOut * max(uPixStep, 1.0), fpOut, jitter);
+  vec3 c = sceneColor(d, sqrt(length(dx) * length(dy)) * max(uPixStep, 1.0), jitter);
   if (DBG(DBG_GRADE)) return clamp(c, 0.0, 1.0) * valid; // linear (the sun disk alone would overflow RGBA16F)
   return grade(c, img) * valid;
 }
@@ -3398,14 +3459,15 @@ void main() {
   if (uSnap > 0.5) img = floor(img) + 0.5;
   float px = max(uPixStep, 1.0);
   vec3 c = vec3(0.0);
-  // Sample k of a progressive sequence (uFrame frames of uSamples each): R2 sub-pixel offsets and
-  // a golden-ratio step of the per-pixel march jitter, so accumulated frames converge.
+  // Sample k of a progressive sequence (uFrame frames of uSamples each): R2 sub-pixel offsets, and
+  // march jitter from interleaved gradient noise shifted on the pixel grid each sample, so the
+  // average converges without keeping the pattern's lattice (a fixed pattern stepped in time did).
   for (int i = 0; i < 16; i++) {
     if (i >= uSamples) break;
     int k = uFrame * uSamples + i;
     vec2 j = k > 0 ? fract(vec2(0.7548777, 0.5698403) * float(k) + 0.5) - 0.5 : vec2(0.0);
-    vec2 q = floor(img / px);
-    c += shadePixel(img + j * px, fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715))) + float(k) * 0.618034));
+    vec2 q = floor(img / px) + 5.588238 * float(k);
+    c += shadePixel(img + j * px, fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715)))));
   }
   // Self-check of the ?diag detector: a slight pink cast on every 7th 8×4 cell.
   if (DBG(DBG_INJECT) && (int(gl_FragCoord.x) / 8 + int(gl_FragCoord.y) / 4) % 7 == 0) c = c * vec3(0.94, 0.9, 0.94) + 0.012 * float(uSamples);
@@ -3501,12 +3563,14 @@ const SETTERS = {
   mat3: (l, v) => gl.uniformMatrix3fv(l, false, v),
 };
 
+const SKY_SAMPLERS = { uTrans: 0, uSkySun: 1, uSkyMoon: 2, uNoise3: 3, uStarStats: 4 };
+
 // One sky program per feature set, compiled on first use and kept.
 const skyPrograms = new Map();
 function skyProgram(feats = ALL_FEATURES) {
   const key = FEATURES.map(k => feats[k] ? 1 : 0).join('');
   let prog = skyPrograms.get(key);
-  if (!prog) skyPrograms.set(key, prog = program(VS, SKY_FS(false, false, feats), { uTrans: 0, uSkySun: 1, uSkyMoon: 2, uNoise3: 3 }));
+  if (!prog) skyPrograms.set(key, prog = program(VS, SKY_FS(false, false, feats), SKY_SAMPLERS));
   return prog;
 }
 
@@ -3534,14 +3598,18 @@ const noise3 = (() => {
     gl.uniform1f(prog.u.uSlice, (z + 0.5) / NOISE_N);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
+  gl.generateMipmap(gl.TEXTURE_3D);
+  // The last mip is the whole tile's average, which nz() fades to once a tile shrinks to a few pixels.
+  const mean = new Uint8Array(4);
+  gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, tex, Math.log2(NOISE_N), 0);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, mean);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.deleteFramebuffer(fbo);
   gl.deleteProgram(prog.p);
-  gl.generateMipmap(gl.TEXTURE_3D);
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   for (const w of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, w, gl.REPEAT);
-  return tex;
+  return { tex, mean: [...mean].map(v => v / 255) };
 })();
 
 // ─── Atmosphere ─────────────────────────────────────────────────────────────
@@ -3609,6 +3677,43 @@ function updateAtmosphere() {
     atmo.Ymoon = renderSkyLUT(atmo.moon, P.moonElev);
     atmo.moonSig = moonSig;
   }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+// Averages over the star population, for the glow that stands in for stars too dense to draw: per
+// layer (texel L) the mean flux × area relative to the layer's own, and the mean colour. Redrawn
+// whenever the uniforms it reads change.
+const starStats = {
+  prog: program(VS, `#version 300 es
+precision highp float;
+precision highp int;
+${SCENE_UNIFORM_DECLS()}
+out vec4 outColor;
+${GLSL_COMMON}
+${GLSL_STAR}
+void main() {
+  vec3 c = vec3(0.0);
+  for (int i = 0; i < 16; i++) for (int j = 0; j < 16; j++) c += starColor((float(i) + 0.5) / 16.0, (float(j) + 0.5) / 16.0);
+  float e = 0.0;
+  for (int i = 0; i < 64; i++) {
+    vec2 sh = starShape(pow((float(i) + 0.5) / 64.0, 3.0), floor(gl_FragCoord.x), 1.0);
+    e += sh.x * sh.y * sh.y;
+  }
+  outColor = vec4(c / 256.0, e / 64.0);
+}`),
+  t: target(7, 1, gl.RGBA32F), sig: '',
+};
+
+function updateStarStats() {
+  const used = SCENE_UNIFORMS.filter(([name]) => starStats.prog.u[name]), values = used.map(([, , get]) => get());
+  const sig = JSON.stringify(values);
+  if (sig === starStats.sig) return;
+  starStats.sig = sig;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, starStats.t.fbo);
+  gl.viewport(0, 0, 7, 1);
+  gl.useProgram(starStats.prog.p);
+  used.forEach(([name, type], i) => SETTERS[type](starStats.prog.u[name], values[i]));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 
@@ -3702,6 +3807,9 @@ function treeField() {
 
 function derive(img) {
   D.img = img || captureDims();
+  const s = Math.max(frameScale(D.img), STAR.ref / STAR.zoom), d = STAR.draw * s;
+  D.starFrame = [d, (STAR.energy * STAR.ref / d) ** 2, STAR.ref / s];
+  updateStarStats();
   ({ waves: D.waves, fx: D.waveFx } = waveField());
   ({ trees: D.trees, n: D.treeN } = treeField());
   D.basis = cameraBasis();
@@ -3788,7 +3896,9 @@ function drawSky(fbo, w, h, pix0, step, values, opts = {}) {
   gl.activeTexture(gl.TEXTURE2);
   gl.bindTexture(gl.TEXTURE_2D, atmo.moon.tex);
   gl.activeTexture(gl.TEXTURE3);
-  gl.bindTexture(gl.TEXTURE_3D, noise3);
+  gl.bindTexture(gl.TEXTURE_3D, noise3.tex);
+  gl.activeTexture(gl.TEXTURE4);
+  gl.bindTexture(gl.TEXTURE_2D, starStats.t.tex);
   for (const [name, type, v] of values) if (sky.u[name]) SETTERS[type](sky.u[name], v);
   gl.uniform2fv(sky.u.uPix0, pix0);
   gl.uniform1f(sky.u.uPixStep, step);
@@ -4293,8 +4403,14 @@ function busy(title, frac, meta) {
   $('busy-meta').textContent = meta;
 }
 
+// Square tiles holding the same number of samples per draw whatever the sample count (a phone's GPU
+// work must stay short), in steps of 32 pixels.
+function tileSize(samples) {
+  return clamp(Math.round(Math.sqrt((PHONE ? 1 << 16 : 1 << 18) / samples) / 32) * 32, 32, 512);
+}
+
 async function renderTiles(W, H, opts, onTile) {
-  const T = PHONE ? 256 : 512, values = sceneValues(), tile = target(T, T);
+  const T = tileSize(opts.samples || 1), values = sceneValues(), tile = target(T, T);
   const px = new Uint8Array(T * T * 4), out = opts.into || new Uint8Array(W * H * 4);
   const total = Math.ceil(W / T) * Math.ceil(H / T);
   let done = 0, t0 = performance.now();
@@ -4333,7 +4449,7 @@ async function saveStill() {
   const [W, H] = captureDims(), label = `${W} × ${H}`, format = C.format;
   busy(`Rendering ${label}`, 0, 'Preparing');
   await nextFrame();
-  const rgba = await renderTiles(W, H, { step: 1, samples: C.samples, quality: C.samples > 1 ? 1.5 : 1.2 },
+  const rgba = await renderTiles(W, H, { step: 1, samples: C.samples, quality: C.samples > 4 ? 1.5 : 1.2 },
     f => busy(`Rendering ${label}`, f * 0.7, `${Math.round(f * 100)}% rendered`));
   if (job.cancel) return;
   busy(`Encoding ${format === 'png' ? 'PNG' : 'JPEG'}`, 0.7, label);
@@ -4833,7 +4949,7 @@ const CAPTURE_MENU = { sections: [
     ['Output', [
       { label: 'Format', type: 'choice', cols: 3, options: [{ value: 'png', title: 'PNG' }, { value: 'jpg', title: 'JPEG' }, { value: 'mp4', title: 'Video' }],
         get: () => C.format, set: v => setCapture({ format: v }) },
-      { label: 'Quality', type: 'choice', cols: 2, options: [{ value: 1, title: 'Standard' }, { value: 4, title: 'Supersampled' }],
+      { label: 'Quality', type: 'choice', cols: 2, options: [{ value: 4, title: 'Standard' }, { value: 16, title: 'Supersampled' }],
         get: () => C.samples, set: v => setCapture({ samples: v }), when: () => C.format !== 'mp4' },
       { label: 'Video Length', min: 1, max: 60, step: 1, fmt: v => v + ' s', get: () => C.seconds, set: v => setCapture({ seconds: v }), when: () => C.format === 'mp4' },
       { label: 'Frame Rate', type: 'choice', cols: 3, options: [24, 30, 60].map(v => ({ value: v, title: v + ' fps' })),
@@ -5115,7 +5231,8 @@ function buildSize(body) {
     const [W, H] = captureDims();
     if (document.activeElement !== wIn) wIn.value = W;
     if (document.activeElement !== hIn) hIn.value = H;
-    note.textContent = `${(W * H / 1e6).toFixed(1)} megapixels · ${Math.ceil(W / 512) * Math.ceil(H / 512)} render tiles`;
+    const T = tileSize(C.samples);
+    note.textContent = `${(W * H / 1e6).toFixed(1)} megapixels · ${Math.ceil(W / T) * Math.ceil(H / T)} render tiles`;
   });
 }
 
@@ -5630,8 +5747,8 @@ async function runDiag() {
   await nextFrame();
   try {
     const tc = performance.now();
-    dg.prog = program(VS, SKY_FS(true), { uTrans: 0, uSkySun: 1, uSkyMoon: 2, uNoise3: 3 });
-    dg.fast = program(VS, SKY_FS(false, true), { uTrans: 0, uSkySun: 1, uSkyMoon: 2, uNoise3: 3 });
+    dg.prog = program(VS, SKY_FS(true), SKY_SAMPLERS);
+    dg.fast = program(VS, SKY_FS(false, true), SKY_SAMPLERS);
     env.diagCompileMs = Math.round(performance.now() - tc);
   } catch (e) {
     $('err').style.display = 'none';
