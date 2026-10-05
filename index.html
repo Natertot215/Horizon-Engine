@@ -2421,7 +2421,7 @@ vec3 limbEnd(Tree tr, int k) {
 // Nearest trunk or limb hit; n is the bark normal, v the height along the trunk (0..1).
 float treeWood(Tree tr, vec3 ro, vec3 rd, out vec3 n, out float v) {
   float rt = tr.h * (tr.type == 1 ? 0.016 : tr.type == 2 ? 0.014 : 0.024);
-  vec3 top = tr.base + vec3(0.0, tr.type == 1 ? 0.7 * tr.h : tr.c.y, 0.0);
+  vec3 top = tr.base + vec3(0.0, tr.type == 1 ? 0.42 * tr.h : tr.c.y, 0.0);
   vec3 pa = tr.base - vec3(0.0, 0.5, 0.0), pb = top;
   float t = capsule(ro, rd, pa, pb, rt), best = t > 0.0 ? t : 1e9;
   float rr = rt;
@@ -2589,7 +2589,7 @@ float treeShadow(vec3 p) {
     vec2 sp = ellipsoidSpan(p, uSunDir, tr.base + tr.c, tr.R);
     if (sp.y > max(sp.x, 0.0)) s *= mix(1.0, exp(-2.6 * (sp.y - max(sp.x, 0.0)) / tr.R.x), 0.9 * min(uTreeLook.x, 1.0));
     float rt = tr.h * (tr.type == 1 ? 0.016 : tr.type == 2 ? 0.014 : 0.024);
-    if (capsule(p, uSunDir, tr.base, tr.base + vec3(0.0, tr.type == 1 ? 0.7 * tr.h : tr.c.y, 0.0), rt) > 0.0) s *= 0.15;
+    if (capsule(p, uSunDir, tr.base, tr.base + vec3(0.0, tr.type == 1 ? 0.42 * tr.h : tr.c.y, 0.0), rt) > 0.0) s *= 0.15;
   }
   return s;
 }
