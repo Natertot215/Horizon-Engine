@@ -1647,6 +1647,13 @@ float landNear() { return 1000.0 * uLandB.x; }
 float landFar() { return landNear() * (uLand.x > 3.5 ? 3.0 + 2.5 * uLand.w : 8.0 + 14.0 * uLand.w); }
 float curveDrop(float r) { return r * r / (2.0 * EARTH_R); }
 
+// Sky light on a surface facing n: mostly the part of the sky it faces, so a facade turned away
+// from a sunset stays dusky blue instead of catching the glow behind it.
+vec3 skyFacing(vec3 n, vec3 amb) {
+  vec3 s = normalize(n + vec3(0.0, 0.7, 0.0));
+  return 0.65 * (physicalSky(s) + nightSky(s) * uNightScale) + 0.35 * amb;
+}
+
 float hashL(vec2 c) {
   uvec2 q = uvec2(ivec2(c) + 1048576);
   return float(pcg(q.x ^ pcg(q.y ^ uint(uLandB.z * 977.0)))) * (1.0 / 4294967296.0);
@@ -1809,7 +1816,7 @@ vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
   } else {
     // Forest on gentle ground below the tree line, meadow in clearings, snow above the snow line.
     float veg = smoothstep(0.66, 0.86, n.y + 0.1 * n2) * (1.0 - smoothstep(0.55, 0.8, h / snowLine + 0.15 * n1));
-    alb = mix(alb, mix(meadow, forest, smoothstep(0.3, 0.5, n1 + 0.3 * n2)), veg);
+    alb = mix(alb, mix(meadow, forest, smoothstep(0.25, 0.45, valueNoise(p.xz / 41.0) * 0.6 + n2 * 0.4)), veg);
     float snow = smoothstep(-60.0, 60.0, h - snowLine + (n1 - 0.5) * 250.0) * smoothstep(0.45, 0.7, n.y + 0.15 * n2) * step(0.001, uLandC.x);
     alb = mix(alb, vec3(0.83, 0.86, 0.91), snow);
   }
@@ -1826,7 +1833,7 @@ vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
       if (sh < 0.02 || q.y > 9000.0) break;
     }
   }
-  vec3 c = alb * (directLight(n) * sh * ao + amb * ao * (0.45 + 0.55 * n.y));
+  vec3 c = alb * (directLight(n) * sh + skyFacing(n, amb) * (0.55 + 0.45 * n.y)) * ao;
   vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
   c = c * tr + horizonSky(rd) * (1.0 - tr);
   return applyFog(c, rd, t, amb);
@@ -1866,10 +1873,10 @@ float cityTrace(vec3 ro, vec3 rd, float fp, out vec3 n) {
     float tx = min(tN.x, tN.y);
     vec2 hs;
     vec4 lot = cityLot(c, hs);
-    if (lot.z > 110.0) {
+    if (lot.z > 150.0 && fract(lot.w * 13.7) < 0.6) {
       vec3 b = vec3(lot.x, lot.z - uSurf.y + 2.0, lot.y) - ro;
-      float tb = max(dot(b, rd), 1.0), dd = length(b - rd * tb), w = max(fp * tb, 0.4);
-      gBeacon += exp(-0.5 * dd * dd / (w * w)) * min(1.0, 0.8 / w) * exp(-tb / 9000.0);
+      float tb = max(dot(b, rd), 1.0), dd = length(b - rd * tb), w = max(fp * tb * 0.6, 0.3);
+      gBeacon += exp(-0.5 * dd * dd / (w * w)) * exp(-tb / 9000.0);
     }
     if (lot.z > 0.0) {
       vec3 ta = (vec3(lot.x - hs.x, -uSurf.y, lot.y - hs.y) - ro) * ri, tb = (vec3(lot.x + hs.x, lot.z - uSurf.y, lot.y + hs.y) - ro) * ri;
@@ -1902,10 +1909,10 @@ vec3 cityShade(vec3 ro, vec3 rd, float t, vec3 n, float fp, vec3 amb) {
   if (gLot.z <= 0.0) {
     c = vec3(0.045) * (directLight(n) + amb) + uCityColor * lights * 0.5 * uNightScale;
   } else if (n.y > 0.5) {
-    c = mix(vec3(0.2), vec3(0.32, 0.3, 0.28), fract(id * 9.1)) * (directLight(n) + amb);
+    c = mix(vec3(0.2), vec3(0.32, 0.3, 0.28), fract(id * 9.1)) * (directLight(n) + skyFacing(n, amb));
   } else {
     bool glassy = fract(id * 7.13) < 0.45;
-    vec3 wall = mix(vec3(0.26, 0.25, 0.24), vec3(0.52, 0.47, 0.4), fract(id * 3.7)) * (glassy ? 0.35 : 1.0);
+    vec3 wall = mix(vec3(0.17, 0.165, 0.16), vec3(0.36, 0.33, 0.29), fract(id * 3.7)) * (glassy ? 0.35 : 1.0);
     float up = p.y + uSurf.y, fh = 3.7, cw = glassy ? 1.5 : 2.2 + 1.6 * fract(id * 5.3);
     vec2 w = vec2((abs(n.x) > 0.5 ? p.z : p.x) / cw, up / fh), f = fract(w);
     float win = glassy ? smoothstep(0.02, 0.1, f.y) * (1.0 - smoothstep(0.86, 0.94, f.y)) * smoothstep(0.02, 0.08, f.x) * (1.0 - smoothstep(0.92, 0.98, f.x))
@@ -1916,12 +1923,15 @@ vec3 cityShade(vec3 ro, vec3 rd, float t, vec3 n, float fp, vec3 amb) {
     float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-rd, n), 0.0), 5.0);
     vec3 refl = mix(horizonSky(R), physicalSky(normalize(vec3(R.x, max(R.y, 0.02), R.z))), smoothstep(0.0, 0.3, R.y));
     refl += sunLight(normalize(R + vec3(0.0, 1e-4, 0.0)), max(fp, 0.004)) * 0.3;
-    vec3 glass = refl * mix(0.1, 1.0, fres) + vec3(0.02, 0.025, 0.03) * amb;
-    c = mix(wall * (directLight(n) + amb * 0.85), glass, cover);
+    // Tinted, coated glass: a dim mirror head-on that brightens toward grazing.
+    vec3 glass = refl * mix(0.05, 0.5, fres) + vec3(0.015, 0.02, 0.025) * skyFacing(n, amb);
+    c = mix(wall * (directLight(n) + skyFacing(n, amb) * 0.85), glass, cover);
     uint hh = hash3u(uvec3(uvec2(ivec2(floor(w)) + 65536), uint(id * 1e6)));
-    float on = step(rnd(hh), lights * 0.75), tone = rnd(hh), level = mix(0.45, 1.0, rnd(hh));
-    vec3 lamp = mix(uCityColor, vec3(0.8, 0.9, 1.0) * luma(uCityColor) * 1.4, step(0.68, tone)) * level;
-    c += mix(lamp * on * win, uCityColor * lights * 0.75 * 0.7 * winAvg, lod) * 3.2 * uNightScale;
+    // A share of windows lit, warm or cool and at varied levels; the far average stays dim so towers
+    // read as dark masses pricked with light rather than glowing slabs.
+    float on = step(rnd(hh), lights * 0.6), tone = rnd(hh), level = mix(0.35, 1.0, rnd(hh) * rnd(hh));
+    vec3 lamp = mix(uCityColor, vec3(0.8, 0.9, 1.0) * luma(uCityColor) * 1.4, step(0.7, tone)) * level;
+    c += mix(lamp * on * win * 3.0, uCityColor * lights * 0.6 * 0.6 * winAvg * 1.8, lod) * uNightScale;
     c *= mix(0.6, 1.0, smoothstep(0.0, 30.0, up));
   }
   vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
@@ -2973,7 +2983,7 @@ vec3 viewRadiance(vec3 ro, vec3 d, float fp, float fpOut, float jitter, vec3 amb
     vec3 n;
     gBeacon = 0.0;
     float t = uLand.x > 3.5 ? cityTrace(ro, d, fp, n) : landTrace(ro, d, fp);
-    beacon = vec3(1.0, 0.07, 0.03) * gBeacon * 40.0 * uNightScale * uLandB.w;
+    beacon = vec3(1.0, 0.07, 0.03) * gBeacon * 6.0 * uNightScale * uLandB.w;
     if (t > 0.0) return beacon + (uLand.x > 3.5 ? cityShade(ro, d, t, n, fp, amb) : landShade(ro, d, t, fp, amb));
   }
   return beacon + skyAbove(d, fp, fpOut, jitter, amb);
