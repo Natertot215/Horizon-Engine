@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05060a">
 <title>Horizon Engine</title>
 <style>
 :root {
@@ -14,17 +15,29 @@
   --shade: rgba(4, 5, 9, .64);
   --void: #05060a;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  /* Notch, Dynamic Island and home indicator (non-zero with viewport-fit=cover). */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
   color-scheme: dark;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 html, body {
-  height: 100%; background: var(--void); color: var(--ink); overflow: hidden;
+  height: 100%; background: var(--void); color: var(--ink); overflow: hidden; overscroll-behavior: none;
   font: 11px/1.4 ui-sans-serif, -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+/* Touch: no double-tap zoom, no grey tap flash, no text inflation in landscape, no long-press
+   selection on the controls (fields stay selectable). */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+#panel, #bar, #credit, #reopen, .modal { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, select { -webkit-user-select: text; user-select: text; }
 button { font: inherit; color: inherit; }
-#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+/* A plain background colour: iOS Safari tints its toolbars from the fixed layer at each edge and
+   would otherwise sample the canvas once and keep that colour. */
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; background: var(--void); -webkit-touch-callout: none; }
 #view.drag { cursor: grabbing; }
 #view.place { cursor: crosshair; }
 
@@ -50,7 +63,7 @@ button { font: inherit; color: inherit; }
   -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
 }
 #panel {
-  position: fixed; top: 12px; right: 12px; bottom: 12px; width: 300px; display: flex; flex-direction: column;
+  position: fixed; top: calc(12px + var(--sat)); right: calc(12px + var(--sar)); bottom: calc(12px + var(--sab)); width: 300px; display: flex; flex-direction: column;
   border-radius: 14px; transition: opacity .2s, transform .2s;
 }
 #panel.hidden { opacity: 0; transform: translateX(12px); pointer-events: none; }
@@ -145,13 +158,13 @@ select option { background: #111; }
 :focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
 
 #reopen {
-  position: fixed; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 50%;
+  position: fixed; top: calc(12px + var(--sat)); right: calc(12px + var(--sar)); width: 32px; height: 32px; border-radius: 50%;
   border: 1px solid var(--faint); background: var(--panel); color: var(--ink); cursor: pointer; display: none; place-items: center;
 }
 #reopen.on { display: grid; }
 
 #bar {
-  position: fixed; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
+  position: fixed; bottom: calc(18px + var(--sab)); transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
   padding: 5px; border-radius: 999px; white-space: nowrap; z-index: 2;
 }
 #bar .capgroup { display: none; align-items: center; gap: 6px; margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--faint); }
@@ -168,7 +181,7 @@ select option { background: #111; }
 #bar .icon { width: 30px; height: 30px; border-radius: 50%; }
 #bar .icon.on { color: #000; background: var(--ink); }
 
-.modal { position: fixed; inset: 0; background: rgba(2, 3, 6, .72); display: none; place-items: center; padding: 24px; z-index: 10; }
+.modal { position: fixed; inset: 0; background: rgba(2, 3, 6, .72); display: none; place-items: center; padding: calc(24px + var(--sat)) calc(24px + var(--sar)) calc(24px + var(--sab)) calc(24px + var(--sal)); z-index: 10; }
 .modal.on { display: grid; }
 .card {
   background: rgba(14, 15, 21, .96); border: 1px solid var(--faint); border-radius: 16px; padding: 16px;
@@ -182,7 +195,7 @@ select option { background: #111; }
 .bar-fill { height: 100%; width: 0; background: var(--ink); transition: width .1s; }
 #sheet img, #sheet video { display: block; max-width: 100%; max-height: 64vh; object-fit: contain; border-radius: 8px; background: #000; margin: 0 auto; }
 #credit {
-  position: fixed; left: 16px; bottom: 18px; display: grid; gap: 3px; z-index: 2;
+  position: fixed; left: calc(16px + var(--sal)); bottom: calc(18px + var(--sab)); display: grid; gap: 3px; z-index: 2;
   font-size: 10.5px; color: var(--dim); letter-spacing: .02em; pointer-events: none; transition: opacity .3s;
 }
 #credit.away { opacity: 0; }
@@ -190,7 +203,7 @@ select option { background: #111; }
 #credit a { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); text-decoration: none; pointer-events: auto; width: max-content; opacity: .82; }
 #credit a:hover { opacity: 1; }
 #toast {
-  position: fixed; left: 50%; top: 18px; transform: translate(-50%, -8px); opacity: 0; pointer-events: none;
+  position: fixed; left: 50%; top: calc(18px + var(--sat)); transform: translate(-50%, -8px); opacity: 0; pointer-events: none;
   border-radius: 999px; padding: 7px 14px; transition: .2s; z-index: 20;
 }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
@@ -215,14 +228,16 @@ select option { background: #111; }
 
 @media (max-width: 700px) {
   /* Phones: the whole sheet scrolls as one; Reset and Capture stay pinned to its bottom edge. */
-  #panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; height: 48%; display: block; overflow-y: auto; overscroll-behavior: contain; }
+  #panel { left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); top: auto; bottom: calc(8px + var(--sab)); width: auto; height: 48%; display: block; overflow-y: auto; overscroll-behavior: contain; }
   .tabbody { overflow: visible; }
   .foot { position: sticky; bottom: 0; background: rgba(9, 10, 15, .97); }
-  #credit { top: 60px; left: 50%; bottom: auto; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; font-size: 8px; letter-spacing: .01em; white-space: nowrap; }
+  #credit { top: calc(60px + var(--sat)); left: 50%; bottom: auto; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; font-size: 8px; letter-spacing: .01em; white-space: nowrap; }
   #credit svg { width: 9px; height: 9px; }
   #credit .gh { display: none; }
-  #bar { bottom: auto; top: 10px; }
+  #bar { bottom: auto; top: calc(10px + var(--sat)); }
 }
+/* iOS zooms the page into any field set below 16px when it takes focus. */
+@media (pointer: coarse) { select, input.num { font-size: 16px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -658,7 +673,8 @@ function deleteLook(look) {
 }
 
 let thumbTarget = null;
-const thumbQueue = [];
+const thumbQueue = []; // [look, canvas, cache key] still to draw
+const THUMB_SAMPLES = 4; // a single sample per pixel leaves thumbnail edges jagged
 
 function renderThumb(look, cv) {
   const savedP = JSON.stringify(P), savedCloud = ANIM.cloud;
@@ -666,11 +682,47 @@ function renderThumb(look, cv) {
   ANIM.cloud = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
   const w = cv.width, h = cv.height;
   thumbTarget = fitTarget(thumbTarget, w, h);
-  drawSky(thumbTarget.fbo, w, h, [0, 0], 1, sceneValues([w, h]), { quality: 0.8 });
+  drawSky(thumbTarget.fbo, w, h, [0, 0], 1, sceneValues([w, h]), { quality: 0.8, samples: THUMB_SAMPLES });
   readInto(cv.getContext('2d'), w, h);
   Object.assign(P, JSON.parse(savedP));
   ANIM.cloud = savedCloud;
 }
+
+// One thumbnail per idle frame: after the view has converged, while the strip is on screen and
+// nothing is touched, cards in view first. Each new look can mean a shader compile, which on a
+// phone stalls the page, so finished thumbnails are kept across visits.
+function nextThumb() {
+  if (!thumbQueue.length || accN < REFINE || pointers.size || C.on || panel.classList.contains('hidden')) return;
+  const strip = $('looks').getBoundingClientRect();
+  const i = thumbQueue.findIndex(([, cv]) => { const r = cv.getBoundingClientRect(); return r.right > strip.left && r.left < strip.right; });
+  const [look, cv, key] = thumbQueue.splice(Math.max(0, i), 1)[0];
+  renderThumb(look, cv);
+  GPU.used += cv.width * cv.height * THUMB_SAMPLES;
+  thumbCache.save(key, cv);
+}
+
+const SCRIPT_TEXT = document.currentScript ? document.currentScript.textContent : '';
+
+// Thumbnails as JPEG data URLs, keyed by this build of the app, the size and the look.
+const thumbCache = {
+  data: (v => v && typeof v === 'object' && !Array.isArray(v) ? v : {})(store('horizon-thumbs')),
+  live: new Set(), version: '', timer: 0,
+  key(look, w, h) {
+    const hash = text => crc32([new TextEncoder().encode(text)]).toString(36);
+    this.version ||= hash(SCRIPT_TEXT);
+    const key = `${this.version}:${w}x${h}:${hash(JSON.stringify(lookParams(look)))}`;
+    this.live.add(key);
+    return key;
+  },
+  save(key, cv) {
+    this.data[key] = cv.toDataURL('image/jpeg', 0.9);
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      for (const k of Object.keys(this.data)) if (!this.live.has(k)) delete this.data[k];
+      store('horizon-thumbs', this.data);
+    }, 1000);
+  },
+};
 
 // ─── Capture Settings ───────────────────────────────────────────────────────
 
@@ -747,21 +799,31 @@ const panel = $('panel');
 const bar = $('bar');
 const F = { x: 0, y: 0, w: 1, h: 1, cx: 0 };
 const BAR_SPACE = 80;
+const NARROW = matchMedia('(max-width: 700px)'); // the phone layout in the stylesheet
+
+// Safe-area insets in CSS pixels (notch, Dynamic Island, home indicator), read from the stylesheet.
+const safeProbe = el('div', null, document.body);
+safeProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:var(--sat) var(--sar) var(--sab) var(--sal)';
+function safeArea() {
+  const s = getComputedStyle(safeProbe);
+  return { t: parseFloat(s.paddingTop) || 0, r: parseFloat(s.paddingRight) || 0, b: parseFloat(s.paddingBottom) || 0, l: parseFloat(s.paddingLeft) || 0 };
+}
 
 function layout() {
-  const vw = innerWidth, vh = innerHeight;
+  // The canvas box, not innerWidth/innerHeight: iOS reports those late and with the toolbar state.
+  const vw = canvas.clientWidth || innerWidth, vh = canvas.clientHeight || innerHeight, sa = safeArea();
   const open = !panel.classList.contains('hidden');
-  const narrow = vw <= 700;
-  const right = open && !narrow ? 324 : 0;
-  const bottom = narrow ? (open ? panel.offsetHeight + 16 : 0) : BAR_SPACE;
-  const top = narrow ? 56 : 0;
-  const aw = vw - right, ah = vh - bottom - top;
+  const narrow = NARROW.matches;
+  const x0 = sa.l, x1 = vw - sa.r - (open && !narrow ? 324 : 0);
+  const y0 = sa.t + (narrow ? 56 : 0);
+  const y1 = vh - sa.b - (narrow ? (open ? panel.offsetHeight + 16 : 0) : BAR_SPACE);
+  const aw = x1 - x0, ah = y1 - y0;
   const [W, H] = captureDims();
   const s = Math.min((aw - 48) / W, (ah - 48) / H);
   F.w = Math.max(8, W * s);
   F.h = Math.max(8, H * s);
-  F.x = (aw - F.w) / 2;
-  F.y = top + (ah - F.h) / 2;
+  F.x = x0 + (aw - F.w) / 2;
+  F.y = y0 + (ah - F.h) / 2;
   F.cx = F.x + F.w / 2;
   frameEl.style.cssText = `left:${F.x}px;top:${F.y}px;width:${F.w}px;height:${F.h}px`;
   placeBar();
@@ -771,9 +833,9 @@ function layout() {
 // Centre the bar under the frame, but keep it on screen and clear of the credit; in capture mode,
 // drop the timelapse controls, then the size readout, when space runs short.
 function placeBar() {
-  const vw = innerWidth, narrow = vw <= 700;
-  const right = (!panel.classList.contains('hidden') && !narrow ? vw - 324 : vw) - 8;
-  const left = narrow || C.on ? 8 : $('credit').getBoundingClientRect().right + 12;
+  const vw = innerWidth, narrow = NARROW.matches, sa = safeArea();
+  const right = (!panel.classList.contains('hidden') && !narrow ? vw - 324 : vw) - sa.r - 8;
+  const left = narrow || C.on ? sa.l + 8 : $('credit').getBoundingClientRect().right + 12;
   bar.classList.remove('compact', 'tight');
   if (C.on && bar.offsetWidth > right - left) bar.classList.add('compact');
   if (C.on && bar.offsetWidth > right - left) bar.classList.add('tight');
@@ -3745,7 +3807,7 @@ function drawSky(fbo, w, h, pix0, step, values, opts = {}) {
 // ─── Motion ─────────────────────────────────────────────────────────────────
 
 const RATES = [[1, 'Real'], [60, '1 min/s'], [600, '10 min/s'], [3600, '1 h/s'], [10800, '3 h/s']];
-Object.assign(ANIM, { playing: false, reverse: false, rate: 600, elapsed: 0, origin: null, scale: 0.7 }, store('horizon-motion'));
+Object.assign(ANIM, { playing: false, reverse: false, rate: 600, elapsed: 0, origin: null }, store('horizon-motion'));
 ANIM.playing = false;
 
 function rotateAboutPole(v, deg) {
@@ -3790,7 +3852,10 @@ function setPlaying(on) {
   if (on && !ANIM.origin) ANIM.origin = Object.fromEntries(ORIGIN_KEYS.map(k => [k, P[k]]));
   ANIM.playing = on;
   if (!on) commitSoon();
+  const shown = lowOK;
   invalidate();
+  // Stopping changes nothing on screen: the last timelapse frame stays until the full view is ready.
+  if (!on && shown) { needLow = false; lowOK = true; }
   syncUI();
 }
 
@@ -3819,12 +3884,187 @@ function elapsedLabel() {
 // ─── Preview Rendering ──────────────────────────────────────────────────────
 
 const VIEW = Object.assign({ scale: 1 }, store('horizon-view'));
-const LOW = PHONE ? 0.3 : 0.45;
+// The canvas matches the screen's own pixels, up to 3×: a 2× canvas on a 3× phone is resampled by
+// 1.5, which softens everything and turns the dither into a faint grid.
+const MAX_DPR = 3;
 const REFINE = 12; // frames averaged once the view holds still
+const FADE = 4; // passes over which a refreshed view takes over from the reprojected previous one
 let needLow = true, needFull = true, lastChange = 0, lowTarget = null, accTarget = null, accN = 0;
 let refineK = 0, refineY = 0; // the refinement pass being rendered and the row its next band starts at
-let renderMs = 0;
+let lowOK = false; // lowTarget shows the current state
+let accCam = null, accKey = ''; // the camera and scene the accumulation is rendering
+// The last finished view, kept while a new one renders: camera moves show it reprojected (sharp and
+// already antialiased) instead of the coarse preview, and the new passes fade in over it.
+let anchorTarget = null, anchor = null;
+let devSize = null; // the canvas in device pixels, where the browser reports it exactly
 
+// GPU pacing. Each frame's sky work is fenced: done by the next frame means there was room, so the
+// budget grows; still running means the GPU is behind, so it shrinks and that frame adds nothing.
+// Phones stay capped: iOS aborts GPU work that runs too long, leaving blocks of a frame unrendered.
+const GPU = { px: FRAME_PX, avg: FRAME_PX, max: PHONE ? 1 << 19 : 1 << 23, fence: null, used: 0, late: false };
+
+function gpuIdle() {
+  if (!GPU.fence) return true;
+  if (gl.getSyncParameter(GPU.fence, gl.SYNC_STATUS) !== gl.SIGNALED) {
+    if (!GPU.late) GPU.px = Math.max(1 << 15, GPU.px * 0.7);
+    GPU.late = true;
+    return false;
+  }
+  gl.deleteSync(GPU.fence);
+  GPU.fence = null;
+  if (!GPU.late && GPU.used > 0.7 * GPU.px) GPU.px = Math.min(GPU.max, GPU.px * 1.15);
+  GPU.avg += (GPU.px - GPU.avg) * 0.1;
+  GPU.late = false;
+  return true;
+}
+
+function gpuFence() {
+  GPU.fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.flush();
+}
+
+// Previews draw at the resolution the budget allows, in 5% steps so it doesn't flicker.
+function previewScale() {
+  return clamp(Math.floor(Math.sqrt(GPU.avg / (canvas.width * canvas.height)) * 20) / 20, 0.15, 1);
+}
+
+const CAMERA_KEYS = ['proj', 'heading', 'pitch', 'roll', 'fov'];
+
+// Everything but the camera: two views that agree on it differ only in where they look (the eye
+// never moves), so one can be reprojected into the other.
+function sceneKey() {
+  const p = { ...P };
+  for (const k of CAMERA_KEYS) delete p[k];
+  return JSON.stringify([p, ANIM.time, ANIM.micro, ANIM.cloud]);
+}
+
+function viewCam(w, h) {
+  const m = viewMapping(w), b = cameraBasis();
+  return { proj: P.proj, half: P.fov * DEG / 2, head: P.heading * DEG, fwd: b.fwd, right: b.right, up: b.up, img: captureDims(), pix0: m.pix0, step: m.step, w, h };
+}
+
+const presentProg = program(VS, `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uAnchor, uAcc, uLow;
+uniform int uHas;      // 1: kept view (same scene), 2: current accumulation
+uniform vec2 uCanvas;
+uniform vec2 uAccN;    // 1 / passes in the current view, its weight over the kept view
+uniform vec3 uAnchorN; // 1 / passes in the kept view; 1 / (passes + 1) in rows below z, from a pass cut short
+uniform float uVignette;
+uniform int uProj, aProj;
+uniform float uHalf, aHalf, uHead, aHead, uStep, aStep;
+uniform vec3 uFwd, uRight, uUp, aFwd, aRight, aUp;
+uniform vec2 uImg, aImg, uPix0, aPix0, aSize;
+out vec4 outColor;
+const float PI = 3.14159265359, TAU = 6.28318530718;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+// The view direction through image point img, as the sky shader's viewDir.
+vec3 viewDir(vec2 img, out float valid) {
+  valid = 1.0;
+  if (uProj == 3) {
+    float lon = uHead + (img.x / uImg.x - 0.5) * TAU;
+    float lat = (0.5 - img.y / uImg.y) * PI;
+    valid = step(abs(lat), 0.5 * PI);
+    lat = clamp(lat, -0.5 * PI, 0.5 * PI);
+    return vec3(sin(lon) * cos(lat), sin(lat), cos(lon) * cos(lat));
+  }
+  vec2 n = (img - 0.5 * uImg) / (0.5 * length(uImg));
+  n.y = -n.y;
+  if (uProj == 0) return normalize(uFwd + (uRight * n.x + uUp * n.y) * tan(uHalf));
+  float r = length(n);
+  float th = uProj == 1 ? r * uHalf : 2.0 * atan(r * tan(0.5 * uHalf));
+  valid = step(th, PI);
+  vec2 u = r > 1e-6 ? n / r : vec2(0.0);
+  return uFwd * cos(th) + (uRight * u.x + uUp * u.y) * sin(th);
+}
+
+// Where the kept view saw direction d, in its image coordinates; false where it could not.
+bool anchorImg(vec3 d, out vec2 img) {
+  if (aProj == 3) {
+    float lon = atan(d.x, d.z) - aHead;
+    lon -= TAU * floor(lon / TAU + 0.5);
+    img = vec2((lon / TAU + 0.5) * aImg.x, (0.5 - asin(clamp(d.y, -1.0, 1.0)) / PI) * aImg.y);
+    return true;
+  }
+  float z = dot(d, aFwd);
+  vec2 p = vec2(dot(d, aRight), -dot(d, aUp)), n;
+  if (aProj == 0) {
+    if (z < 1e-3) return false;
+    n = p / (z * tan(aHalf));
+  } else {
+    float th = acos(clamp(z, -1.0, 1.0)), l = length(p);
+    if (aProj == 2 && th > 3.0) return false; // the stereographic image runs to infinity behind
+    float r = aProj == 1 ? th / aHalf : tan(0.5 * th) / tan(0.5 * aHalf);
+    n = l > 1e-6 ? p * (r / l) : vec2(0.0);
+  }
+  img = 0.5 * aImg + n * (0.5 * length(aImg));
+  return true;
+}
+
+// Bilinear from the kept sums, scaling texel by texel: rows of a pass cut short hold one more sample.
+vec3 anchorAt(vec2 gp) {
+  vec2 f = gp - 0.5, t = fract(f);
+  ivec2 i = ivec2(floor(f)), hi = ivec2(aSize) - 1;
+  vec3 c = vec3(0.0);
+  for (int k = 0; k < 4; k++) {
+    ivec2 o = ivec2(k & 1, k >> 1), q = clamp(i + o, ivec2(0), hi);
+    float w = (o.x == 1 ? t.x : 1.0 - t.x) * (o.y == 1 ? t.y : 1.0 - t.y);
+    c += w * texelFetch(uAnchor, q, 0).rgb * (float(q.y) < uAnchorN.z ? uAnchorN.y : uAnchorN.x);
+  }
+  return c;
+}
+
+float vignette(vec2 img, vec2 size) {
+  return 1.0 - uVignette * smoothstep(0.3, 1.15, length((img - 0.5 * size) / (0.5 * length(size))));
+}
+
+void main() {
+  vec2 img = uPix0 + vec2(gl_FragCoord.x, uCanvas.y - gl_FragCoord.y) * uStep;
+  float k = 0.0; // the kept view's share, feathered toward its edges so the seam doesn't show
+  vec3 kept = vec3(0.0);
+  if ((uHas & 1) != 0) {
+    float valid;
+    vec3 d = viewDir(img, valid);
+    vec2 ai;
+    if (valid < 0.5) k = 1.0; // outside the projection: black, as the sky shader draws it
+    else if (anchorImg(d, ai)) {
+      // A 360° image repeats sideways, so the kept canvas may hold d a turn to either side.
+      for (int i = 0; i < 3 && k == 0.0; i++) {
+        vec2 a = ai + vec2(float(i == 1) - float(i == 2), 0.0) * aImg.x;
+        vec2 q = (a - aPix0) / aStep, gp = vec2(q.x, aSize.y - q.y);
+        vec2 edge = min(gp, aSize - gp) - 0.5;
+        if (min(edge.x, edge.y) >= 0.0) {
+          // The vignette sits on the frame, not the sky: move it from where it was to where it is.
+          kept = anchorAt(gp) * vignette(img, uImg) / max(vignette(a, aImg), 0.05);
+          k = max(smoothstep(0.0, 0.03 * min(aSize.x, aSize.y), min(edge.x, edge.y)), 1e-3);
+        }
+        if (aProj != 3) break;
+      }
+    }
+  }
+  vec3 c;
+  float fresh; // the share of the pixel that carries its own dither
+  if ((uHas & 2) != 0) {
+    k *= 1.0 - uAccN.y;
+    c = mix(texelFetch(uAcc, ivec2(gl_FragCoord.xy), 0).rgb * uAccN.x, kept, k);
+    fresh = 1.0 - k;
+  } else {
+    c = mix(texture(uLow, gl_FragCoord.xy / uCanvas).rgb, kept, k);
+    fresh = 0.0;
+  }
+  // Resampled pixels lose most of their dither; add it back so gradients don't band.
+  c += (1.0 - fresh) * (hash12(gl_FragCoord.xy) + hash12(gl_FragCoord.xy + 71.3) - 1.0) / 255.0;
+  outColor = vec4(c, 1.0);
+}`, { uAnchor: 0, uAcc: 1, uLow: 2 });
+
+// Kept for ?diag, which resolves its accumulation tests with it.
 const resolveProg = program(VS, `#version 300 es
 precision highp float;
 uniform sampler2D uAcc;
@@ -3833,7 +4073,13 @@ out vec4 outColor;
 void main() { outColor = vec4(texelFetch(uAcc, ivec2(gl_FragCoord.xy), 0).rgb * uScale, 1.0); }`, { uAcc: 0 });
 
 function invalidate() {
+  // Keep the finished view being replaced, for reprojection while the next one renders.
+  if (accN > 0) {
+    [anchorTarget, accTarget] = [accTarget, anchorTarget];
+    anchor = { n: accN, split: refineK === accN ? refineY : 0, cam: accCam, key: accKey };
+  }
   needLow = needFull = true;
+  lowOK = false;
   accN = refineY = 0;
   lastChange = performance.now();
 }
@@ -3845,9 +4091,11 @@ function viewMapping(cw) {
 }
 
 function resizeCanvas() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.max(1, Math.round(canvas.clientWidth * dpr * VIEW.scale));
-  const h = Math.max(1, Math.round(canvas.clientHeight * dpr * VIEW.scale));
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR), r = canvas.getBoundingClientRect();
+  // The exact size only settles rounding: some (emulated) setups report CSS pixels there.
+  const exact = devSize && dpr === window.devicePixelRatio && Math.abs(devSize[0] - r.width * dpr) < 2 && Math.abs(devSize[1] - r.height * dpr) < 2;
+  const w = Math.max(1, Math.round((exact ? devSize[0] : r.width * dpr) * VIEW.scale));
+  const h = Math.max(1, Math.round((exact ? devSize[1] : r.height * dpr) * VIEW.scale));
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -3855,50 +4103,75 @@ function resizeCanvas() {
   }
 }
 
+// Shows the view: the current accumulation, over the kept view reprojected while the accumulation
+// is young, and the low-resolution preview wherever neither reaches.
+function present() {
+  const w = canvas.width, h = canvas.height, acc = accN > 0;
+  if (!acc && !lowOK) return;
+  const cam = viewCam(w, h), keep = !!anchor && anchor.key === sceneKey(), u = presentProg.u;
+  // Reprojected, the kept view is softened by resampling, so the new passes take over after a few;
+  // from an unchanged camera it is exact and stays until they have as many samples.
+  const span = keep && JSON.stringify(anchor.cam) === JSON.stringify(cam) ? anchor.n : FADE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, w, h);
+  gl.useProgram(presentProg.p);
+  [keep && anchorTarget, acc && accTarget, lowTarget].forEach((t, i) => {
+    gl.activeTexture(gl.TEXTURE0 + i);
+    gl.bindTexture(gl.TEXTURE_2D, t ? t.tex : null);
+  });
+  gl.uniform1i(u.uHas, (keep ? 1 : 0) | (acc ? 2 : 0));
+  gl.uniform2f(u.uCanvas, w, h);
+  gl.uniform2f(u.uAccN, acc ? 1 / accN : 0, Math.min(1, accN / span));
+  gl.uniform1f(u.uVignette, P.vignette);
+  for (const [k, c] of [['u', cam], ['a', keep ? anchor.cam : cam]]) {
+    gl.uniform1i(u[k + 'Proj'], c.proj);
+    gl.uniform1f(u[k + 'Half'], c.half);
+    gl.uniform1f(u[k + 'Head'], c.head);
+    gl.uniform1f(u[k + 'Step'], c.step);
+    gl.uniform3fv(u[k + 'Fwd'], c.fwd);
+    gl.uniform3fv(u[k + 'Right'], c.right);
+    gl.uniform3fv(u[k + 'Up'], c.up);
+    gl.uniform2fv(u[k + 'Img'], c.img);
+    gl.uniform2fv(u[k + 'Pix0'], c.pix0);
+  }
+  if (keep) {
+    gl.uniform2f(u.aSize, anchor.cam.w, anchor.cam.h);
+    gl.uniform3f(u.uAnchorN, 1 / anchor.n, 1 / (anchor.n + 1), anchor.split);
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// The interactive preview (and timelapse frames): one draw at reduced scale, upsampled by present().
 function renderView(scale = 1, quality = 1) {
   const values = sceneValues();
-  const t0 = performance.now();
-  if (scale < 1) {
-    const w = Math.max(1, Math.round(canvas.width * scale)), h = Math.max(1, Math.round(canvas.height * scale));
-    lowTarget = fitTarget(lowTarget, w, h);
-    const m = viewMapping(w);
-    drawSky(lowTarget.fbo, w, h, m.pix0, m.step, values, { quality });
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, lowTarget.fbo);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-    gl.blitFramebuffer(0, 0, w, h, 0, 0, canvas.width, canvas.height, gl.COLOR_BUFFER_BIT, gl.LINEAR);
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
-  } else {
-    const m = viewMapping(canvas.width);
-    drawSky(null, canvas.width, canvas.height, m.pix0, m.step, values, { quality });
-  }
-  accN = 0;
-  renderMs = performance.now() - t0;
+  const w = Math.max(1, Math.round(canvas.width * scale)), h = Math.max(1, Math.round(canvas.height * scale));
+  lowTarget = fitTarget(lowTarget, w, h);
+  const m = viewMapping(w);
+  drawSky(lowTarget.fbo, w, h, m.pix0, m.step, values, { quality });
+  GPU.used += w * h;
+  lowOK = true;
+  present();
 }
 
 // Progressive refinement: frame k adds a sample with new sub-pixel and march offsets to a float
 // buffer, and the canvas shows the running average.
-// Renders the next band of pass k (up to FRAME_PX samples); returns true once the pass is complete
-// and shown.
+// Renders the next band of pass k (as many rows as the GPU budget allows); returns true once the
+// pass is complete and shown.
 function refineView(k) {
-  const w = canvas.width, h = canvas.height, m = viewMapping(w), t0 = performance.now();
+  const w = canvas.width, h = canvas.height, m = viewMapping(w);
   const values = sceneValues(); // before blending is on: it may re-render the atmosphere LUTs
   accTarget = fitTarget(accTarget, w, h, gl.RGBA16F);
   if (k !== refineK) { refineK = k; refineY = 0; }
-  const y1 = Math.min(h, refineY + Math.max(1, Math.floor(FRAME_PX / w)));
+  if (k === 0 && refineY === 0) { accCam = viewCam(w, h); accKey = sceneKey(); }
+  const y1 = Math.min(h, refineY + Math.max(1, Math.floor(GPU.px / w)));
   if (k > 0) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
   drawSky(accTarget.fbo, w, h, m.pix0, m.step, values, { frame: k, rows: [refineY, y1] });
   gl.disable(gl.BLEND);
+  GPU.used += (y1 - refineY) * w;
   refineY = y1 < h ? y1 : 0;
-  renderMs = performance.now() - t0;
   if (refineY) return false;
   accN = k + 1;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, w, h);
-  gl.useProgram(resolveProg.p);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, accTarget.tex);
-  gl.uniform1f(resolveProg.u.uScale, 1 / accN);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  present();
   return true;
 }
 
@@ -4884,11 +5157,13 @@ function buildLookStrip() {
   strip.textContent = '';
   lookRefreshers.length = 0;
   thumbQueue.length = 0;
+  thumbCache.live.clear();
   for (const look of [...PRESETS, ...looks]) {
     const card = el('button', 'preset', strip);
-    const cv = el('canvas', null, card);
-    cv.width = 140;
-    cv.height = 88;
+    const cv = el('canvas', null, card), dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    // One pixel per screen pixel inside the card's border (70×44 outside it).
+    cv.width = Math.round((cv.clientWidth || 68) * dpr);
+    cv.height = Math.round((cv.clientHeight || 42) * dpr);
     el('span', null, card, look.name);
     card.onclick = () => applyLook(look);
     if (looks.includes(look)) {
@@ -4902,7 +5177,13 @@ function buildLookStrip() {
         setTimeout(() => { x.classList.remove('armed'); x.textContent = '×'; }, 2500);
       };
     }
-    thumbQueue.push([look, cv]);
+    const key = thumbCache.key(look, cv.width, cv.height), url = thumbCache.data[key];
+    if (url) {
+      const img = new Image();
+      img.onload = () => cv.getContext('2d').drawImage(img, 0, 0);
+      img.onerror = () => thumbQueue.push([look, cv, key]);
+      img.src = url;
+    } else thumbQueue.push([look, cv, key]);
     lookRefreshers.push(() => card.classList.toggle('active', lookActive(look)));
   }
   const add = el('button', 'preset add', strip);
@@ -5098,7 +5379,21 @@ canvas.addEventListener('gesturechange', e => {
   e.preventDefault();
   if (pointers.size < 2) { zoom(pinchFrom / e.scale / P.fov); changed(); }
 });
-canvas.addEventListener('webglcontextlost', () => fail('The GPU context was lost. Reload the page to continue.'));
+// A lost GPU context (iOS drops them for background tabs and under memory pressure) can't be rebuilt
+// in place, so the page reloads into the same scene, unless it already did so moments ago.
+canvas.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  let last = 0;
+  try { last = +sessionStorage.getItem('horizon-reloaded') || 0; } catch {}
+  if (Date.now() - last < 15000) { fail('The GPU context was lost. Reload the page to continue.'); return; }
+  try {
+    sessionStorage.setItem('horizon-resume', JSON.stringify({ P, tab, capture: C.on, panel: !panel.classList.contains('hidden') }));
+    sessionStorage.setItem('horizon-reloaded', String(Date.now()));
+  } catch {}
+  const reload = () => { if (!document.hidden) location.reload(); };
+  document.addEventListener('visibilitychange', reload);
+  reload();
+});
 
 window.addEventListener('keydown', e => {
   if (job) return;
@@ -5121,6 +5416,17 @@ window.addEventListener('keydown', e => {
   else if (k === 'escape') { if ($('sheet').classList.contains('on')) closeSheet(); else if (C.on) setCaptureMode(false); }
 });
 window.addEventListener('resize', layout);
+// The canvas box drives layout (iOS can fire resize before the new size settles) and, where the
+// browser reports it, the exact device-pixel size of the canvas.
+try {
+  new ResizeObserver(([e]) => {
+    const d = e.devicePixelContentBoxSize && e.devicePixelContentBoxSize[0];
+    devSize = d ? [d.inlineSize, d.blockSize] : null;
+    layout();
+  }).observe(canvas, { box: 'device-pixel-content-box' });
+} catch {
+  new ResizeObserver(() => layout()).observe(canvas);
+}
 
 // ─── Diagnostics ────────────────────────────────────────────────────────────
 
@@ -5134,7 +5440,7 @@ const DIAG = DIAG_ARG !== null;
 // to: where the sky is drawn; f16 is the RGBA16F accumulation target, read back as float. passes
 // add up with blending, in row bands of `band` under the scissor, then `resolve` divides them out.
 const DIAG_PATHS = {
-  thumb: { to: 't8', q: 0.8 },                           // renderThumb
+  thumb: { to: 't8', q: 0.8, samples: THUMB_SAMPLES },    // renderThumb
   f16: { to: 'f16' },
   acc1: { to: 'f16', passes: 1, resolve: 't8' },
   acc4: { to: 'f16', passes: 4, resolve: 't8' },
@@ -5165,7 +5471,7 @@ function diagRender(c, values) {
   for (let k = 0; k < n; k++) {
     if (k) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
     for (let y = 0; y < h; y += band) {
-      drawSky(fbo, w, h, [0, 0], c.step || 1, values, { prog: c.prog, debug: c.mask, quality: c.q, frame: k, rows: c.band && [y, Math.min(h, y + band)] });
+      drawSky(fbo, w, h, [0, 0], c.step || 1, values, { prog: c.prog, debug: c.mask, quality: c.q, samples: c.samples, frame: k, rows: c.band && [y, Math.min(h, y + band)] });
     }
     gl.disable(gl.BLEND);
   }
@@ -5263,7 +5569,7 @@ function diagEnv() {
     version: gl.getParameter(gl.VERSION),
     highFloat: prec(gl.HIGH_FLOAT), highInt: prec(gl.HIGH_INT),
     dpr: devicePixelRatio, canvas: [canvas.width, canvas.height], css: [innerWidth, innerHeight],
-    maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE), PHONE, FRAME_PX, LOW,
+    maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE), PHONE, FRAME_PX, budget: Math.round(GPU.px),
     ua: navigator.userAgent, extensions: gl.getSupportedExtensions(),
   };
 }
@@ -5308,7 +5614,7 @@ async function runDiag() {
     `GL    ${env.version}`,
     `highp float [${env.highFloat}] · int [${env.highInt}]  (rangeMin, rangeMax, precision)`,
     `dpr ${env.dpr} · canvas ${env.canvas.join('×')} · css ${env.css.join('×')} · maxTex ${env.maxTexture}`,
-    `PHONE ${PHONE} · FRAME_PX ${FRAME_PX} · LOW ${LOW}`,
+    `PHONE ${PHONE} · FRAME_PX ${FRAME_PX} · budget ${env.budget}`,
   ].join('\n'));
   const bar = el('div', 'row-b', ui), copy = el('button', 'btn', bar, 'Copy results'), status = el('span', '', bar, 'compiling…');
   copy.disabled = true;
@@ -5413,33 +5719,52 @@ async function runDiag() {
 
 // ─── Main Loop ──────────────────────────────────────────────────────────────
 
-let statT = 0, uiT = 0, lastFrame = performance.now();
+let statT = 0, uiT = 0, lastFrame = performance.now(), fps = 60;
 function frame(now) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
   if (!job) {
     resizeCanvas();
-    if (ANIM.playing) {
-      advance(dt);
-      ANIM.scale = clamp(ANIM.scale * (dt > 0.034 ? 0.94 : dt < 0.022 ? 1.03 : 1), 0.3, 1);
-      renderView(ANIM.scale, 0.75);
-      needFull = true;
-      needLow = false;
-      if (now - uiT > 150) { syncUI(); uiT = now; }
-    } else {
-      const settling = now - lastChange < 150;
-      if (needLow && settling) { renderView(LOW, 0.6); needLow = false; }
-      else if (needFull && !settling) { refineView(0); needFull = needLow = false; }
-      else if (refineY && !settling) refineView(refineK);
-      else if (thumbQueue.length && !settling) renderThumb(...thumbQueue.shift());
-      else if (accN > 0 && accN < REFINE && !settling) refineView(accN);
+    // The timelapse keeps real time even on frames the GPU is too busy to draw.
+    if (ANIM.playing) { advance(dt); lowOK = false; }
+    if (gpuIdle()) {
+      GPU.used = 0;
+      if (ANIM.playing) {
+        renderView(previewScale(), 0.75);
+        fps += (1 / Math.max(dt, 1e-3) - fps) * 0.1;
+        needFull = true;
+        needLow = false;
+        if (now - uiT > 150) { syncUI(); uiT = now; }
+      } else {
+        const settling = now - lastChange < 150;
+        if (needLow && settling) { renderView(previewScale(), 0.6); needLow = false; }
+        else if (needFull && !settling) { refineView(0); needFull = needLow = false; }
+        else if (refineY && !settling) refineView(refineK);
+        else if (accN > 0 && accN < REFINE && !settling) refineView(accN);
+        else if (!settling) nextThumb();
+      }
+      if (GPU.used) gpuFence();
     }
-    if (now - statT > 250) { statEl.textContent = renderMs.toFixed(1) + ' ms'; statT = now; }
+    if (now - statT > 250) {
+      statEl.textContent = ANIM.playing ? `${Math.round(fps)} fps` : accN ? `${accN} spp` : '';
+      statT = now;
+    }
   }
   requestAnimationFrame(frame);
 }
 
+// Back from a reload after a lost GPU context: the same scene, panel and mode.
+const resume = (() => { try { const r = JSON.parse(sessionStorage.getItem('horizon-resume')); sessionStorage.removeItem('horizon-resume'); return r; } catch { return null; } })();
+if (resume && resume.P) {
+  Object.assign(P, resume.P);
+  cloudSel = [0, 1, 2].find(i => P[`c${i}On`]) ?? 0;
+  if (typeof resume.tab === 'string') tab = resume.tab;
+}
 buildUI();
+if (resume) {
+  if (resume.panel === false) setPanel(false);
+  if (resume.capture) setCaptureMode(true);
+}
 layout();
 history.base = JSON.stringify(P);
 if (DIAG) runDiag();

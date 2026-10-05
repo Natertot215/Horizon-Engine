@@ -78,6 +78,7 @@ function serve() {
 // refineView, renderThumb, ...) and read pixels back as base64 so Node can analyse them.
 function installHelpers() {
   job = { cancel: false }; // the app's frame loop renders nothing while an export job is set
+  GPU.px = GPU.avg = FRAME_PX; // bands of the documented size, whatever the frame loop's pacing reached
   const b64 = a => {
     const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
     let s = '';
@@ -138,6 +139,43 @@ function installHelpers() {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       const shown = cv.getContext('2d').getImageData(0, 0, w, h).data;
       return { data: b64(raw), shown: b64(shown), glError: gl.getError() };
+    },
+    // Reprojection: renders n passes of preset i at camera cam0, moves the camera by `move`, and
+    // presents the kept view reprojected over a 1×1 black, then white, stand-in for the low-
+    // resolution preview (pixels equal in both are the kept view alone). Returns those, the unmoved
+    // view as shown, and a fresh n-pass render at the moved camera; RGBA8 rows bottom-up, the fresh
+    // one as float.
+    warp(i, w, h, n, cam0, move) {
+      const readCanvas = () => {
+        const px = new Uint8Array(w * h * 4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        return px;
+      };
+      const passes = () => { for (let k = 0; k < n; k++) while (!refineView(k)); };
+      canvas.width = w;
+      canvas.height = h;
+      applyLook(PRESETS[i]);
+      Object.assign(P, cam0);
+      invalidate();
+      anchor = null;
+      passes();
+      const before = readCanvas();
+      Object.assign(P, move);
+      invalidate();
+      const over = v => {
+        lowTarget = fitTarget(lowTarget, 1, 1);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, lowTarget.fbo);
+        gl.clearColor(v, v, v, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        lowOK = true;
+        present();
+        return readCanvas();
+      };
+      const black = over(0), white = over(1);
+      passes();
+      const fresh = readFloat(accTarget.fbo, w, h);
+      return { before: b64(before), black: b64(black), white: b64(white), fresh: b64(fresh), glError: gl.getError() };
     },
     // Frames the main view so the canvas shows exactly the whole capture image, as a thumbnail
     // does, and renders one sample per pixel (pass 0) at the thumbnail's ray-step quality (read
@@ -493,6 +531,55 @@ try {
     } finally {
       await context.close();
     }
+  });
+
+  // While a camera move renders, the view shows the last finished one reprojected. Its inverse
+  // projections must land each direction where the fresh render puts it: much closer than the
+  // unmoved image, for every projection. Compared in 4×4-block means, since resampling alone
+  // moves fine detail (ripples, the horizon line) by a level or two.
+  await check('reprojection: the kept view, moved with the camera, matches a fresh render (4 projections)', async () => {
+    const problems = [], notes = [];
+    const [w, h] = MAIN, n = 4, B = 4;
+    const cases = [
+      ['Lens', { proj: 0, fov: 70 }, { heading: '+5', pitch: '+3', roll: '+4' }],
+      ['Fisheye', { proj: 1, fov: 150 }, { heading: '+12', pitch: '+6' }],
+      ['Dome', { proj: 2, fov: 160 }, { heading: '+12', pitch: '-6', fov: '-25' }],
+      ['360°', { proj: 3, fov: 360 }, { heading: '+30' }],
+    ];
+    const name = names.includes('Fuji Twilight') ? 'Fuji Twilight' : names[0];
+    for (const [label, cam0, rel] of cases) {
+      const r = await page.evaluate(([n0, w, h, n, cam0, rel]) => {
+        const i = __t.presetIndex(n0), base = { ...lookParams(PRESETS[i]), ...cam0 };
+        const move = Object.fromEntries(Object.entries(rel).map(([k, d]) => [k, base[k] + +d]));
+        return __t.warp(i, w, h, n, cam0, move);
+      }, [name, w, h, n, cam0, rel]);
+      const before = u8(r.before), black = u8(r.black), white = u8(r.white), fresh = f32(r.fresh);
+      const kept = p => black[p * 4] === white[p * 4] && black[p * 4 + 1] === white[p * 4 + 1] && black[p * 4 + 2] === white[p * 4 + 2];
+      let covered = 0, blocks = 0, ew = 0, es = 0;
+      for (let p = 0; p < w * h; p++) covered += kept(p);
+      for (let by = 0; by < h / B; by++) for (let bx = 0; bx < w / B; bx++) {
+        const px = [];
+        for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) px.push((by * B + y) * w + bx * B + x);
+        if (!px.every(kept)) continue;
+        blocks++;
+        for (let c = 0; c < 3; c++) {
+          let a = 0, b = 0, f = 0;
+          for (const p of px) { a += black[p * 4 + c]; b += before[p * 4 + c]; f += Math.min(255, Math.max(0, fresh[p * 4 + c] / n * 255)); }
+          ew += Math.abs(a - f) / px.length;
+          es += Math.abs(b - f) / px.length;
+        }
+      }
+      ew /= 3 * blocks || 1;
+      es /= 3 * blocks || 1;
+      const cov = covered / (w * h);
+      notes.push(`${label}: covers ${(cov * 100).toFixed(0)}%, error ${ew.toFixed(2)} vs unmoved ${es.toFixed(2)} levels`);
+      if (r.glError) problems.push(`${label}: gl error 0x${r.glError.toString(16)}`);
+      if (cov < 0.5) problems.push(`${label}: the kept view covers only ${(cov * 100).toFixed(0)}% after a small move`);
+      if (!(ew < 0.3 * es)) problems.push(`${label}: reprojected error ${ew.toFixed(2)} is not well below the unmoved ${es.toFixed(2)}`);
+      if (!(ew < 2.5)) problems.push(`${label}: reprojected error ${ew.toFixed(2)} levels > 2.5`);
+    }
+    assert(!problems.length, problems.join('\n') + '\n' + notes.join('\n'));
+    return `${name}: ` + notes.join('\n      ');
   });
 
   await check('no errors logged during the run', async () => {
