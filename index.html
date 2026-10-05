@@ -73,7 +73,6 @@ button { font: inherit; color: inherit; }
 .saverow .num { margin: 0; text-align: left; font-family: inherit; flex: 1; }
 .saverow .btn { flex: none; padding: 6px 12px; }
 .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 6px 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; }
-.subhead { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; font-size: 9.5px; letter-spacing: .2em; text-transform: uppercase; }
 .tab {
   background: none; border: 0; border-radius: 7px; color: var(--dim); cursor: pointer;
   padding: 6px 0 5px; display: grid; justify-items: center; gap: 3px; font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
@@ -88,6 +87,7 @@ button { font: inherit; color: inherit; }
   padding: 7px 0; letter-spacing: .06em; cursor: pointer; white-space: nowrap;
 }
 .btn:hover { border-color: var(--dim); }
+.btn:disabled { opacity: .32; pointer-events: none; }
 .btn.active, .btn.primary { background: var(--ink); color: #000; border-color: var(--ink); }
 .btn.primary:hover { background: #fff; }
 .sec { border-top: 1px solid var(--line); }
@@ -299,7 +299,7 @@ const CLOUD_TYPES = {
 
 function cloudLayer(i, type, extra = {}) {
   const out = {};
-  const base = { On: true, ...CLOUD_TYPES[type], Wind: 70 + i * 25, Speed: 12 + i * 8, Morph: 0.4, Seed: i * 3 + 1, ...extra };
+  const base = { On: true, ...CLOUD_TYPES[type], Vary: 0.6, Wind: 70 + i * 25, Speed: 12 + i * 8, Morph: 0.4, Seed: i * 3 + 1, ...extra };
   for (const [k, v] of Object.entries(base)) out[`c${i}${k}`] = v;
   return out;
 }
@@ -633,17 +633,6 @@ function deleteLook(look) {
   looks.splice(looks.indexOf(look), 1);
   store('horizon-looks', looks);
   buildLookStrip();
-}
-
-function reseed() {
-  const r = () => Math.random();
-  P.starSeed = 1 + Math.floor(r() * 98);
-  P.landSeed = Math.round(r() * 500) / 10;
-  P.mwSeed = Math.round(r() * 200) / 10;
-  P.nebSeed = Math.round(r() * 400) / 10;
-  P.meteorSeed = 1 + Math.floor(r() * 98);
-  for (let i = 0; i < 3; i++) P[`c${i}Seed`] = Math.round(r() * 500) / 10;
-  changed();
 }
 
 let thumbTarget = null;
@@ -1476,37 +1465,48 @@ float hg(float c, float g) {
   return 0.0795775 * (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5);
 }
 
-vec2 cloudShape(int i, vec2 xz, float rate) {
+vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
+
+// A layer's field in cell units: x is the puff field before thresholding, y the local coverage.
+// Weather (two very large octaves) makes coverage and cell size wander across the sky, and every
+// octave is rotated and scaled by an irrational ratio, so the tiled noise never visibly repeats.
+vec2 cloudField(int i, vec2 xz, float rate) {
   vec4 B = uCloudB[i], Cc = uCloudC[i], Dd = uCloudD[i];
   vec2 q = xz + Dd.zw;
   vec2 r = vec2(dot(q, Dd.xy), dot(q, vec2(-Dd.y, Dd.x))) / B.x;
-  r.x /= 1.0 + B.w * 5.0;
   rate /= B.x;
-  float m = Cc.z;
+  float m = Cc.z, vary = uCloudE[i].x;
   vec3 o = Cc.w * vec3(0.137, 0.291, 0.533);
+  float w = nz(vec3(rot2(r, 0.6) * 0.017 + o.xy, 0.31 + m * 0.1), 0.017 * rate).r * 0.6
+          + nz(vec3(rot2(r, 2.2) * 0.043 + o.yz, 0.67 + m * 0.2), 0.043 * rate).r * 0.4;
+  r.x /= 1.0 + B.w * 5.0;
+  // Dense weather breaks into tighter cells; thin weather into larger, looser ones.
+  r *= 1.0 + (w - 0.5) * 0.7 * vary;
   if (B.w > 0.0) {
     vec2 wv = vec2(nz(vec3(r * 0.35, m) + o.zxy, 0.35 * rate).a, nz(vec3(r * 0.35, m) + o.yzx + 0.5, 0.35 * rate).a) - 0.5;
     r += wv * B.w * 1.6;
   }
-  float big = nz(vec3(r * 0.12, m * 0.5) + o, 0.12 * rate).r;
+  float big = nz(vec3(rot2(r, 1.1) * 0.13, m * 0.5) + o, 0.13 * rate).r;
   float n1 = nz(vec3(r * 0.5, m) + o.yzx, 0.5 * rate).r;
-  float base = n1;
-  if (B.y > 0.0) base = mix(base, nz(vec3(r * 0.5, m) + o.zxy, 0.5 * rate).g * 0.6 + n1 * 0.4, B.y);
-  if (B.z > 0.0) base = mix(base, base * 0.45 + nz(vec3(r * 2.2, m * 1.5) + o, 2.2 * rate).b * 0.75 - 0.08, B.z);
-  float cov = uCloudA[i].x + (big - 0.5) * 0.7;
-  return vec2(remap(base, 1.0 - cov, 1.0 - cov + 0.08 + 0.42 * Cc.y), remap(base, 1.0 - cov - 0.04, 1.0 - cov + 0.7) * (0.55 + 0.45 * big));
+  float base = mix(n1, nz(vec3(rot2(r, 0.83) * 1.37, m * 1.3) + o.zxy, 1.37 * rate).a, 0.3);
+  if (B.y > 0.0) base = mix(base, nz(vec3(rot2(r, 0.4) * 0.53, m) + o.zxy, 0.53 * rate).g * 0.6 + base * 0.4, B.y);
+  if (B.z > 0.0) base = mix(base, base * 0.45 + nz(vec3(rot2(r, 1.9) * 2.3, m * 1.5) + o, 2.3 * rate).b * 0.75 - 0.08, B.z);
+  return vec2(base, uCloudA[i].x + (big - 0.5) * 0.5 + (w - 0.5) * 1.3 * vary);
 }
 
 float cloudDensity(int i, vec3 pw, float hf, float rate, bool detailed) {
   if (hf < 0.0 || hf > 1.0) return 0.0;
-  vec2 sh = cloudShape(i, pw.xz, rate);
-  float s = sh.x;
-  if (s <= 0.0) return 0.0;
-  float h = sqrt(sh.y), puff = uCloudB[i].y, soft = uCloudC[i].y;
-  float lower = mix(0.5 - 0.5 * h, 0.0, puff), upper = mix(0.5 + 0.5 * h, h, puff);
-  float e = 0.06 + 0.25 * soft;
-  float d = s * smoothstep(lower, lower + e, hf) * smoothstep(upper, upper - e, hf);
-  if (detailed && uCloudC[i].x > 0.0 && d > 0.0) {
+  vec2 f = cloudField(i, pw.xz, rate);
+  float puff = uCloudB[i].y, soft = uCloudC[i].y;
+  // Flat bases and domed tops for heaped clouds, lens shapes for thin layers: only the strongest
+  // part of the field reaches the top and bottom, so puffs are rounded rather than extruded. Edges
+  // soften with the pixel footprint instead of breaking into blocks.
+  float prof = mix(4.0 * hf * (1.0 - hf), smoothstep(0.0, 0.1, hf) * (1.0 - hf * hf), puff);
+  float lo = 1.0 - f.y + (1.0 - prof) * (0.4 - 0.18 * soft);
+  float d = remap(f.x, lo, lo + 0.06 + 0.3 * soft + min(rate * 2.0, 0.3));
+  if (d <= 0.0) return 0.0;
+  d = d * d * (3.0 - 2.0 * d);
+  if (detailed && uCloudC[i].x > 0.0) {
     float ds = uCloudB[i].x * 0.16;
     vec3 dq = vec3(pw.x + uCloudD[i].z, pw.y, pw.z + uCloudD[i].w) / ds + vec3(0.0, uCloudC[i].z * 2.0, 0.0);
     float det = nz(dq, rate / ds).g * 0.65 + nz(dq * 2.7, 2.7 * rate / ds).b * 0.35;
@@ -1543,7 +1543,7 @@ vec4 cloudLayer(int i, vec3 d, float fp, float jitter) {
   float phase = mix(0.0796, 0.75 * hg(c, 0.82) + 0.25 * hg(c, -0.25), uCloudLight.x);
   float sigma = uCloudA[i].y * 32.0;
   float Lup = dot(L, up);
-  int n = int(clamp((tEnd - t0) / (th * 0.1) * uQuality, 6.0, 40.0 * uQuality));
+  int n = int(clamp((tEnd - t0) / (th * 0.07) * uQuality, 8.0, 48.0 * uQuality));
   float graze = inversesqrt(max(abs(dot(d, up)), 0.04));
   float dt = (tEnd - t0) / float(n);
   float t = t0 + dt * jitter;
@@ -2724,6 +2724,7 @@ const SCENE_UNIFORMS = [
   ['uCloudB', 'vec4', () => D.cloudB, 3],
   ['uCloudC', 'vec4', () => D.cloudC, 3],
   ['uCloudD', 'vec4', () => D.cloudD, 3],
+  ['uCloudE', 'vec4', () => D.cloudE, 3],
   ['uCloudN', 'int', () => D.cloudN],
   ['uCloudLight', 'vec4', () => [P.cSilver, P.cAmbient, P.cGlow, P.cBright]],
   ['uCloudTint', 'vec4', () => [...hexLinear(P.cLightTint), P.cLightAmt]],
@@ -3350,12 +3351,14 @@ function derive(img) {
   D.cloudB = new Array(12).fill(0);
   D.cloudC = new Array(12).fill(0);
   D.cloudD = new Array(12).fill(0);
+  D.cloudE = new Array(12).fill(0);
   layers.forEach((i, n) => {
     const c = k => P[`c${i}${k}`], w = c('Wind') * DEG, a = ANIM.cloud[i];
     D.cloudA.splice(n * 4, 4, c('Cover'), c('Dens'), c('Alt'), c('Thick'));
     D.cloudB.splice(n * 4, 4, c('Scale'), c('Billow'), c('Cells'), c('Streak'));
     D.cloudC.splice(n * 4, 4, c('Detail'), c('Soft'), a[2], c('Seed') + i * 7.3);
     D.cloudD.splice(n * 4, 4, Math.sin(w), Math.cos(w), a[0], a[1]);
+    D.cloudE.splice(n * 4, 4, c('Vary'), 0, 0, 0);
   });
   updateAtmosphere();
   const ev = Math.pow(2, P.ev);
@@ -3950,6 +3953,7 @@ const TABS = [
     ]],
     ['Shape', [
       { key: 'c#Cover', label: 'Coverage', min: 0, max: 1, step: 0.005, fmt: pct, when: layerOn },
+      { key: 'c#Vary', label: 'Variation', min: 0, max: 1, step: 0.01, fmt: pct, when: layerOn },
       { key: 'c#Dens', label: 'Density', min: 0.02, max: 2, step: 0.01, fmt: fmt(2), when: layerOn },
       { key: 'c#Scale', label: 'Scale', min: 0.3, max: 20, step: 0.05, fmt: km, when: layerOn },
       { key: 'c#Billow', label: 'Billow', min: 0, max: 1, step: 0.01, fmt: fmt(2), when: layerOn },
@@ -4197,7 +4201,7 @@ const TABS = [
 ];
 
 // Camera and capture settings share one submenu, opened by the Capture button.
-const CAPTURE_MENU = { id: 'capture', label: 'Camera & Capture', sections: [
+const CAPTURE_MENU = { id: 'capture', sections: [
     ['Frame', [
       { type: 'custom', build: buildAspect },
       { type: 'custom', build: buildDevice },
@@ -4218,6 +4222,8 @@ const CAPTURE_MENU = { id: 'capture', label: 'Camera & Capture', sections: [
     ]],
     ['Resolution', [
       { type: 'custom', build: buildSize },
+      { label: 'Preview Resolution', min: 0.35, max: 1, step: 0.05, fmt: pct,
+        get: () => VIEW.scale, set: v => { VIEW.scale = v; store('horizon-view', VIEW); } },
     ]],
     ['Output', [
       { label: 'Format', type: 'choice', cols: 3, options: [{ value: 'png', title: 'PNG' }, { value: 'jpg', title: 'JPEG' }, { value: 'mp4', title: 'Video' }],
@@ -4237,10 +4243,6 @@ const CAPTURE_MENU = { id: 'capture', label: 'Camera & Capture', sections: [
       } },
       { label: 'Thirds Grid', type: 'toggle', get: () => C.grid, set: v => setCapture({ grid: v }) },
       { label: 'Pixel Loupe', type: 'toggle', get: () => C.loupe, set: v => { C.loupe = v; } },
-    ]],
-    ['Preview', [
-      { label: 'Preview Resolution', min: 0.35, max: 1, step: 0.05, fmt: pct,
-        get: () => VIEW.scale, set: v => { VIEW.scale = v; store('horizon-view', VIEW); } },
     ]],
 ]};
 
@@ -4531,7 +4533,7 @@ function renderMenu(menu) {
     for (const it of items) buildItem(it, body);
   }
   // On phones the whole panel scrolls; bring a new menu's start back into view.
-  panel.scrollTop = Math.min(panel.scrollTop, $(C.on ? 'subhead' : 'tabs').offsetTop);
+  panel.scrollTop = C.on ? 0 : Math.min(panel.scrollTop, $('tabs').offsetTop);
   syncUI();
 }
 
@@ -4633,14 +4635,6 @@ function buildUI() {
     b.onclick = () => showTab(t.id);
     tabButtons[t.id] = b;
   }
-  const sub = el('div', 'subhead', panel);
-  sub.id = 'subhead';
-  sub.hidden = true;
-  const back = el('button', 'icon', sub);
-  back.setAttribute('aria-label', 'Leave capture');
-  back.innerHTML = svg('<path d="M10 3.5L5.5 8l4.5 4.5"/>');
-  back.onclick = () => setCaptureMode(false);
-  el('span', null, sub, CAPTURE_MENU.label);
   const strip = $('looks');
   strip.addEventListener('wheel', e => {
     if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
@@ -4649,9 +4643,10 @@ function buildUI() {
   }, { passive: false });
   tabBody = el('div', 'tabbody', panel);
   const foot = el('div', 'foot', panel);
-  const seed = el('button', 'btn', foot, 'Reseed');
-  seed.title = 'New random star, cloud, and terrain patterns';
-  seed.onclick = reseed;
+  const resetAll = el('button', 'btn', foot, 'Reset');
+  resetAll.title = 'Return every setting to its default (undo brings it back)';
+  resetAll.onclick = () => applyLook({ name: 'Default', p: {} });
+  staticRefreshers.push(() => { resetAll.disabled = C.on; });
   const cap = el('button', 'btn primary', foot, 'Capture');
   cap.onclick = () => setCaptureMode(!C.on);
   staticRefreshers.push(() => { cap.textContent = C.on ? 'Exit Capture' : 'Capture'; cap.classList.toggle('primary', !C.on); });
@@ -4700,11 +4695,11 @@ function buildUI() {
   showTab(TABS.some(t => t.id === tab) ? tab : 'sky');
 }
 
-// Capture mode swaps the tab strip for the Camera & Capture submenu.
+// Capture mode shows only the Camera & Capture controls: no looks strip and no tabs.
 function setCaptureMode(on) {
   C.on = on;
-  $('tabs').hidden = on;
-  $('subhead').hidden = !on;
+  for (const id of ['looks', 'tabs']) $(id).hidden = on;
+  if (on) $('save-row').hidden = true;
   renderMenu(on ? CAPTURE_MENU : TABS.find(t => t.id === tab));
 }
 
