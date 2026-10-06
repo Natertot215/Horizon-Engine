@@ -380,7 +380,7 @@ const DEFAULTS = {
   relief: 1,
   trees: 0, treeType: 0, treeHeight: 14, treeNear: 30, treeFar: 140, treeHeading: 200, treeSpread: 70, treeSeed: 1,
   treeColor: '#3d5a24', treeAutumn: 0, treeFoliage: 1, treeWidth: 1,
-  land: 0, landHeight: 3, landRough: 0.5, landLayers: 3, landDepth: 1, landHeading: 0, landSeed: 1,
+  land: 0, landHeight: 3, landRough: 0.5, landLayers: 2, landDepth: 1, landHeading: 0, landSeed: 1,
   landColor: '#2a2d36', cityLights: 0.5, cityColor: '#ffbe76', landSnow: 0, forestMix: 0.6, forestDensity: 0.85,
   peak: 0, peakHeading: 200, peakWidth: 14, peakSnow: 0.35,
   fog: 0, fogHeight: 40, fogGlow: 0.3, fogColor: '#c9cfe0', haze: 0.35,
@@ -621,7 +621,7 @@ const PRESETS = [
   } },
   { name: 'Alpine Lake', p: {
     sunElev: 9, sunHeading: 70, heading: 205, pitch: 3, fov: 65,
-    surfWaves: 0.03, land: 2, landHeight: 7.5, landLayers: 3, landColor: '#5a524c', landSnow: 0.65, landDepth: 3, haze: 0.25,
+    surfWaves: 0.03, land: 2, landHeight: 7.5, landLayers: 2, landColor: '#5a524c', landSnow: 0.65, landDepth: 3, haze: 0.25,
   } },
   { name: 'Twin Moons', p: {
     sunElev: -10, sunHeading: 260, heading: 230, pitch: 8, fov: 70, starBright: 0.6,
@@ -1799,11 +1799,17 @@ const float CITY_G = 64.0;
 const mat2 LAND_ROT = mat2(0.8, 0.6, -0.6, 0.8);
 
 float landNear() { return 1000.0 * uLandB.x; }
-float landFar() { return landNear() * (uLand.x > 3.5 ? 3.0 + 2.5 * uLand.w : 8.0 + 14.0 * uLand.w); }
+float landFar() { return landNear() * (uLand.x > 3.5 ? 8.0 : 8.0 + 14.0 * uLand.w); }
 float curveDrop(float r) { return r * r / (2.0 * EARTH_R); }
+// How much larger each range is than the one in front, by distance: Ranges 1 keeps every range at
+// the same apparent height, so the nearest hides the rest; up to 4 they step back into the haze.
+float landRise(float r) { return pow(max(r / landNear(), 1.0), 0.08 * (uLand.w - 1.0)); }
 // Relief height per metre of distance, in units of tan(Height): hills, mountains, forest floor; none
 // for None and City, where only the volcano stands on the base plane.
 float landGain() { return uLand.x < 0.5 || uLand.x > 3.5 ? 0.0 : uLand.x < 1.5 ? 1.3 : uLand.x < 2.5 ? 1.8 : 0.45; }
+// Feature size (m) of the relief at the shore, and its height (m) at distance r before Ranges.
+float landScale() { return uLand.x < 1.5 ? 1700.0 : uLand.x < 2.5 ? 2600.0 : 1500.0; }
+float landAmp(float r) { return tan(uLand.y * DEG) * clamp(r - 0.4 * landNear(), 0.6 * landNear(), 30000.0) * landGain(); }
 
 // Sky light on a surface facing n: mostly the part of the sky it faces, so a facade turned away
 // from a sunset stays dusky blue instead of catching the glow behind it.
@@ -1880,9 +1886,8 @@ float canopy(vec2 p, float px, inout vec2 g) {
 // Land height (m) above the base plane at p (metres from the eye) and its gradient g. Octaves finer
 // than the footprint px are left out.
 float landHeight(vec2 p, float px, out vec2 g) {
-  float r = length(p), type = uLand.x;
-  float L = type < 1.5 ? 1700.0 : type < 2.5 ? 2600.0 : 1500.0;
-  float A = tan(uLand.y * DEG) * clamp(r - 0.4 * landNear(), 0.6 * landNear(), 30000.0) * landGain();
+  float r = length(p), type = uLand.x, rise = landRise(r);
+  float L = landScale() * rise, A = landAmp(r) * rise;
   int oct = A > 0.0 ? int(clamp(log2(L / max(px, 1.0)), 2.0, type < 2.5 ? 9.0 : 5.0)) : 0;
   vec2 q = rot2(p, uLandB.y) / L + uLandB.z * vec2(0.71, 1.37);
   vec3 n = relief(q, oct, type < 1.5 ? 0.35 : type < 2.5 ? 0.6 + 1.4 * uLand.z : 0.2);
@@ -1927,7 +1932,7 @@ float landTrace(vec3 ro, vec3 rd, float fp) {
   float t = shoreEntry(ro, rd), kStep = uLand.x > 1.5 && uLand.x < 2.5 ? 0.4 : 0.5;
   // The steepest apparent slope anything can reach (relief stays below 1, so landHeight's v below
   // 1.42; the volcano adds its own): a ray climbing faster, above it, is clear.
-  float top = tan(uLand.y * DEG) * landGain() * 1.42 + (uPeak.x > 0.0 ? tan(uPeak.x * DEG) : 0.0);
+  float top = tan(uLand.y * DEG) * landGain() * 1.42 * landRise(far) + (uPeak.x > 0.0 ? tan(uPeak.x * DEG) : 0.0);
   float tPrev = t, dPrev = 1e9;
   for (int i = 0; i < 600; i++) {
     vec3 p = ro + rd * t;
@@ -1946,8 +1951,11 @@ float landTrace(vec3 ro, vec3 rd, float fp) {
     // Tree cones are steep: step finely inside the canopy band (trees stand at most 26 m) while
     // canopy() still draws single trees. Steps never shrink below a share of the distance, so rays
     // that skim the land all the way out still arrive within the loop.
+    // Far relief is taller for its width, so its slopes steepen with distance: a step longer than
+    // the gap over the steepest of them would jump the peaks.
     float band = uLand.x > 2.5 && uLand.x < 3.5 && fp * t < 7.0 ? 26.0 : 0.0;
-    t += max(dy > band ? (dy - band) * kStep + band * 0.2 : dy * 0.2, max(fp, dy > band ? 0.01 : 0.003) * t + 0.5);
+    float k = min(kStep, landScale() / max(landAmp(r) * 2.0, 1e-3));
+    t += max(dy > band ? (dy - band) * k + band * 0.2 : dy * 0.2, max(fp, dy > band ? 0.01 : 0.003) * t + 0.5);
   }
   return -1.0;
 }
@@ -1960,12 +1968,15 @@ vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
   vec2 g;
   float h = landHeight(p.xz, fp * t * 0.35, g);
   vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
-  float n1 = valueNoise(p.xz / 90.0 + uLandB.z), n2 = valueNoise(p.xz / 17.0 - uLandB.z);
+  // Texture noise runs up the slopes too, so cliffs are not streaked with the ground's pattern.
+  vec2 pn = p.xz + h * vec2(0.8, -0.6);
+  float n1 = valueNoise(pn / 90.0 + uLandB.z), n2 = valueNoise(pn / 17.0 - uLandB.z);
   // Rock in strata that follow the height, darker on the steepest faces.
   float strata = valueNoise(vec2(h / 23.0 + n1 * 2.0, 0.5));
   vec3 alb = uLandColor * (0.62 + 0.3 * n1 + 0.18 * n2 + 0.25 * strata) * mix(0.75, 1.0, smoothstep(0.35, 0.75, n.y));
   vec3 forest = vec3(0.022, 0.04, 0.018) * (0.7 + 0.6 * n2), meadow = vec3(0.07, 0.09, 0.035) * (0.8 + 0.4 * n1);
-  float snowLine = mix(2600.0, 120.0, uLandC.x);
+  // At full Snow the snow line drops below the valley floors.
+  float snowLine = mix(2600.0, -150.0, uLandC.x);
   float ao = 1.0;
   if (gPeak > 0.5) {
     float Hp = landNear() * 14.0 * tan(uPeak.x * DEG), e = h / max(Hp, 1.0);
@@ -1980,11 +1991,15 @@ vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
     alb = mix(crown, uLandColor * 0.5, 0.15) * (0.75 + 0.5 * hashL(floor(p.xz / 10.0)));
     ao = mix(0.35, 1.0, gCanopy);
   } else {
-    // Forest on gentle ground below the tree line, meadow in clearings, snow above the snow line.
-    float veg = smoothstep(0.66, 0.86, n.y + 0.1 * n2) * (1.0 - smoothstep(0.55, 0.8, h / snowLine + 0.15 * n1));
-    alb = mix(alb, mix(meadow, forest, smoothstep(0.25, 0.45, valueNoise(p.xz / 41.0) * 0.6 + n2 * 0.4)), veg);
+    // Forest on gentle ground below the tree line, meadow in clearings, snow above the snow line;
+    // snow buries the meadows but the forest's dark crowns show through it. Single trees speckle
+    // the forest until they shrink below a pixel.
+    float veg = smoothstep(0.66, 0.86, n.y + 0.1 * n2) * (1.0 - smoothstep(0.55, 0.8, h / max(snowLine, 300.0) + 0.15 * n1));
+    float wood = smoothstep(0.25, 0.45, valueNoise(pn / 41.0) * 0.6 + n2 * 0.4);
+    float trees = mix(valueNoise(pn / 6.0), 0.5, smoothstep(0.5, 2.0, fp * t / 6.0));
+    alb = mix(alb, mix(meadow, forest * (0.55 + 0.9 * trees), wood), veg);
     float snow = smoothstep(-60.0, 60.0, h - snowLine + (n1 - 0.5) * 250.0) * smoothstep(0.45, 0.7, n.y + 0.15 * n2) * step(0.001, uLandC.x);
-    alb = mix(alb, vec3(0.83, 0.86, 0.91), snow);
+    alb = mix(alb, vec3(0.83, 0.86, 0.91), snow * (1.0 - 0.7 * wood * veg));
   }
   float sh = 1.0;
   if (uSunDir.y > -0.04) {
@@ -3471,14 +3486,16 @@ void main() {
   float px = max(uPixStep, 1.0);
   vec3 c = vec3(0.0);
   // Sample k of a progressive sequence (uFrame frames of uSamples each): R2 sub-pixel offsets, and
-  // march jitter from interleaved gradient noise shifted on the pixel grid each sample, so the
-  // average converges without keeping the pattern's lattice (a fixed pattern stepped in time did).
+  // march jitter. The first sample takes interleaved gradient noise, the best single-sample dither;
+  // the rest step a golden-ratio sequence from a hashed start. IGN offsets any shift by a constant,
+  // so its every sample left the same checkerboard (neighbours sit half a step apart) in the average.
   for (int i = 0; i < 16; i++) {
     if (i >= uSamples) break;
     int k = uFrame * uSamples + i;
     vec2 j = k > 0 ? fract(vec2(0.7548777, 0.5698403) * float(k) + 0.5) - 0.5 : vec2(0.0);
-    vec2 q = floor(img / px) + 5.588238 * float(k);
-    c += shadePixel(img + j * px, fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715)))));
+    vec2 q = floor(img / px);
+    float jit = k == 0 ? fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715)))) : fract(hash12(q + 0.37) + 0.618034 * float(k));
+    c += shadePixel(img + j * px, jit);
   }
   // Self-check of the ?diag detector: a slight pink cast on every 7th 8×4 cell.
   if (DBG(DBG_INJECT) && (int(gl_FragCoord.x) / 8 + int(gl_FragCoord.y) / 4) % 7 == 0) c = c * vec3(0.94, 0.9, 0.94) + 0.012 * float(uSamples);
@@ -4860,7 +4877,7 @@ const TABS = [
         after: () => { if (P.land) P.landHeight = LANDS[P.land][1]; } },
       { key: 'landHeight', label: 'Height', min: 0.3, max: 15, step: 0.05, fmt: deg, when: () => P.land > 0 },
       { key: 'landRough', label: 'Ruggedness', min: 0, max: 1, step: 0.01, fmt: fmt(2), when: () => P.land === 2 },
-      { key: 'landLayers', label: 'Extent', min: 1, max: 4, step: 1, fmt: fmt(0), when: () => P.land > 0 },
+      { key: 'landLayers', label: 'Ranges', min: 1, max: 4, step: 1, fmt: fmt(0), when: () => P.land > 0 && P.land < 4 },
       { key: 'landDepth', label: 'Shore Distance', min: 0.2, max: 5, step: 0.01, fmt: v => v.toFixed(2) + ' km', when: () => P.land > 0 },
       { key: 'landHeading', label: 'Rotate', min: 0, max: 360, step: 0.5, fmt: deg, when: () => P.land > 0 },
       { key: 'landSeed', label: 'Shape', min: 0, max: 50, step: 0.1, fmt: fmt(1), when: () => P.land > 0 },
