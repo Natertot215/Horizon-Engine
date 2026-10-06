@@ -905,6 +905,12 @@ float gauss(float x) { return exp(-0.5 * x * x); }
 
 vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
 
+// The unit xz vector of a compass heading, and a point's coordinates in the frame of a unit axis u
+// and its perpendicular (u.y, -u.x), and back.
+vec2 dirXZ(float heading) { return vec2(sin(heading), cos(heading)); }
+vec2 toFrame(vec2 p, vec2 u) { return vec2(dot(p, u), dot(p, vec2(u.y, -u.x))); }
+vec2 fromFrame(vec2 q, vec2 u) { return q.x * u + q.y * vec2(u.y, -u.x); }
+
 float valueNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
@@ -936,10 +942,7 @@ vec3 densities(float h) {
   return vec3(exp(-h / 8.0) * uAtmo.x, exp(-h / 1.2) * uAtmo.y, max(0.0, 1.0 - abs(h - 25.0) / 15.0) * uAtmo.z);
 }
 
-vec3 extinction(float h) {
-  vec3 n = densities(h);
-  return RAY_SCA * n.x + MIE_EXT * n.y + OZONE_ABS * n.z;
-}
+vec3 extinction(vec3 n) { return RAY_SCA * n.x + MIE_EXT * n.y + OZONE_ABS * n.z; }
 
 vec3 transmittance(float r, float mu) {
   if (DBG(DBG_TRANS)) return vec3(0.8);
@@ -981,7 +984,7 @@ void main() {
   float dt = d / float(N);
   for (int k = 0; k < N; k++) {
     float t = (float(k) + 0.5) * dt;
-    tau += extinction(sqrt(t * t + 2.0 * r * mu * t + r * r) - RG) * dt;
+    tau += extinction(densities(sqrt(t * t + 2.0 * r * mu * t + r * r) - RG)) * dt;
   }
   outColor = vec4(any(isnan(tau)) ? vec3(1.0) : exp(-tau), 1.0); // isnan: no Metal fast math (see SKY_FS)
 }`;
@@ -1021,7 +1024,7 @@ void main() {
     vec3 n = densities(r - RG);
     vec3 sR = RAY_SCA * n.x;
     float sM = MIE_SCA * n.y;
-    vec3 ext = sR + MIE_EXT * n.y + OZONE_ABS * n.z;
+    vec3 ext = extinction(n);
     float muS = dot(p, uLight) / r;
     float muH = -sqrt(max(0.0, 1.0 - RG * RG / (r * r)));
     vec3 Ts = transmittance(r, muS);
@@ -1167,16 +1170,17 @@ vec3 faceDir(int face, vec2 uv) {
   return vec3(uv, -1.0);
 }
 
-float twinkleAmt = 0.0;
+float gTwinkle = 0.0; // how much the stars of the ray being shaded twinkle
 bool gMirror = false; // tracing a reflection: sun and moon disks come from glint() instead
 bool gNoLand = false; // reflection ray that would really meet another wave
-float gShade = 1.0;   // tree shadow on the patch of ground being shaded
 
 // A star's light is fixed on the sky, while its drawn size follows the frame and is the same across it
 // (uStarFrame.x): zooming spreads or gathers the same light, so the sky's brightness and colour hold
 // at every zoom and over a wide, stretched frame. uStarFrame.y scales a star's core to keep its light;
 // .z is the zoom alone, for glows, spikes and trails, which keep the frame-relative size they had.
 float starSigma() { return uStars.w * uStarFrame.x; }
+// The pixel's own share of a star's blur (a variance) at footprint fp.
+float pixVar(float fp) { return 0.16 * fp * fp; }
 
 const float STAR_CELLS[7] = float[7](8.0, 20.0, 48.0, 110.0, 250.0, 560.0, 1250.0);
 
@@ -1189,8 +1193,7 @@ vec3 stars(vec3 p, float fp, float boost, vec3 rightC, vec3 upC) {
   else { face = p.z > 0.0 ? 4 : 5; uv = p.xy / a.z; }
   vec2 w = atan(uv) * (2.0 / PI) + 0.5;
   float sigma0 = starSigma(), K = uStarFrame.y;
-  float pix2 = 0.16 * fp * fp;
-  mat2 spin = mat2(cos(uSpikes.y), sin(uSpikes.y), -sin(uSpikes.y), cos(uSpikes.y));
+  float pix2 = pixVar(fp);
   vec3 sum = vec3(0.0);
   for (int L = 0; L < 7; L++) {
     float layerW = clamp(uStars.y * 7.0 - float(L), 0.0, 1.0);
@@ -1230,13 +1233,13 @@ vec3 stars(vec3 p, float fp, float boost, vec3 rightC, vec3 upC) {
           if (!bright && r2 > 30.0 * se2) continue;
           float cr = rnd(h), cs = rnd(h);
           vec3 col = starColor(cr, cs) * f * exist;
-          col *= 1.0 + twinkleAmt * sin(uTime.y * (5.0 + 7.0 * rnd(h)) + rnd(h) * TAU);
+          col *= 1.0 + gTwinkle * sin(uTime.y * (5.0 + 7.0 * rnd(h)) + rnd(h) * TAU);
           vec3 c = col * exp(-0.5 * r2 / se2) * (K * sig * sig / se2);
           if (bright) {
             float gs = sigma0 * 11.7 + fp, Z = uStarFrame.z * uStarFrame.z;
             c += col * uStarLook.z * 0.05 * exp(-sqrt(r2) / gs) * Z * pow(sigma0 * 11.7 / gs, 2.0);
             if (uSpikes.x > 0.0) {
-              vec2 o = spin * vec2(dot(dv, rightC), dot(dv, upC));
+              vec2 o = rot2(vec2(dot(dv, rightC), dot(dv, upC)), uSpikes.y);
               float len = sigma0 * 50.0 * uSpikes.z * sqrt(f);
               float wd = sqrt(se2) * 0.5;
               float sp = exp(-abs(o.y) / wd - abs(o.x) / len) + exp(-abs(o.x) / wd - abs(o.y) / len);
@@ -1264,7 +1267,7 @@ vec3 starTrails(vec3 p, float fp) {
   const float DR = 0.35 * DEG;
   float k0 = floor(rho / DR);
   float sigma0 = starSigma(), K = uStarFrame.z;
-  float pix2 = 0.16 * fp * fp;
+  float pix2 = pixVar(fp);
   float L = uTrails.x;
   vec3 sum = vec3(0.0);
   for (int dk = -1; dk <= 1; dk++) {
@@ -1368,24 +1371,37 @@ vec4 nebula(vec3 p, float fp) {
 // stars, planets and the moon (and the moon's glitter on water) low in the sky.
 vec3 skyExtinction(float mu) { return mix(vec3(1.0), transmittance(OBS, max(mu, 0.0)) / max(transmittance(OBS, 1.0), vec3(1e-4)), uStarLook.w); }
 
+// Coverage of a disk of angular radius r by a pixel ang from its centre, antialiased over the
+// footprint fp.
+float diskCover(float r, float ang, float fp) { return clamp((r - ang) / max(fp, 1e-7) + 0.5, 0.0, 1.0); }
+
+// Shading of a dusty, airless surface: nearly flat across the lit disk, falling only at the
+// terminator. mu0 is the cosine toward the light and z the cosine toward the eye.
+float lunarShade(float mu0, float z) {
+  mu0 = max(mu0, 0.0);
+  return 2.0 * mu0 / (mu0 + max(z, 0.05));
+}
+
+// The lit fraction of the moon's face (uMoonLight.z is the cosine of its phase angle).
+float moonLitFrac() { return 0.5 + 0.5 * uMoonLight.z; }
+
 vec4 moonDisk(vec3 d, float fp) {
   vec3 dv = d - uMoonDir;
   float ang = 2.0 * asin(clamp(length(dv) * 0.5, 0.0, 1.0));
   float r = uMoon.y;
-  float illum = 0.5 + 0.5 * uMoonLight.z;
+  float illum = moonLitFrac();
   vec3 glow = vec3(0.85, 0.9, 1.0) * uMoon.w * illum * (0.35 * exp(-ang / (r * 2.5)) + 0.08 * exp(-ang / 0.06) + 0.02 * exp(-ang / 0.3));
   float hr = (ang - 22.0 * DEG) / (0.9 * DEG);
   glow += uMoonHalo * illum * 0.05 * exp(-hr * hr) * mix(vec3(1.0, 0.55, 0.35), vec3(0.75, 0.85, 1.0), smoothstep(-1.0, 1.5, hr));
   glow *= uMoon.z;
-  float cover = clamp((r - ang) / max(fp, 1e-7) + 0.5, 0.0, 1.0);
+  float cover = diskCover(r, ang, fp);
   if (cover <= 0.0 || gMirror) return vec4(glow, 0.0);
   vec3 mr = normalize(cross(vec3(0.0, 1.0, 0.0), uMoonDir));
   vec3 mu = cross(uMoonDir, mr);
   vec2 xy = vec2(dot(dv, mr), dot(dv, mu)) / r;
   float z = sqrt(max(0.0, 1.0 - dot(xy, xy)));
   vec3 n = vec3(xy, z);
-  float mu0 = max(dot(n, uMoonLight.xyz), 0.0);
-  float shade = 2.0 * mu0 / (mu0 + max(z, 0.05));
+  float shade = lunarShade(dot(n, uMoonLight.xyz), z);
   float maria = smoothstep(0.5, 0.66, textureLod(uNoise3, n * 0.42 + vec3(0.31, 0.57, 0.13), 0.0).r);
   float crater = textureLod(uNoise3, n * 1.5 + 0.2, 0.0).g;
   float albedo = 0.95 - 0.38 * maria - 0.14 * (crater - 0.5);
@@ -1396,6 +1412,8 @@ vec4 moonDisk(vec3 d, float fp) {
 // ── Planets, moons and a deep-sky galaxy ──
 
 const int MAX_BODIES = 2;
+// Body types, as the Type control numbers them.
+const int BODY_GAS = 0, BODY_ICE = 1, BODY_ROCKY = 2, BODY_MOON = 3, BODY_OCEAN = 4, BODY_LAVA = 5;
 
 // Where d lies on the sky around the direction c (cosA = dot(d, c)): azimuthal equidistant
 // coordinates in units of the angular radius R, x to the right and y up.
@@ -1424,14 +1442,14 @@ vec3 bodySurface(int type, vec3 n, vec3 ax, float seed, vec3 c1, vec3 c2, float 
   vec3 sp = vec3(cos(lat) * cos(lon), sin(lat), cos(lat) * sin(lon));
   vec3 o = seed * vec3(0.173, 0.311, 0.097);
   emit = vec3(0.0);
-  if (type == 0 || type == 1) {
+  if (type == BODY_GAS || type == BODY_ICE) {
     // Banded giant: turbulent zones and belts, with an oval storm on gas giants.
     float turb = nz(sp * 1.1 + o, fr * 1.1).a - 0.5;
     float fine = nz(sp * vec3(1.6, 9.0, 1.6) + o.yzx, fr * 6.0).r - 0.5;
-    float t = lat * (type == 0 ? 8.0 : 5.0) + turb * 0.6 + fine * 0.4;
+    float t = lat * (type == BODY_GAS ? 8.0 : 5.0) + turb * 0.6 + fine * 0.4;
     float bands = 0.5 + 0.32 * sin(t * PI + seed) + 0.18 * sin(t * 2.3 * PI + seed * 2.0);
-    vec3 alb = mix(c1, c2, smoothstep(0.15, 0.85, bands) * (type == 0 ? 1.0 : 0.35));
-    if (type == 0) {
+    vec3 alb = mix(c1, c2, smoothstep(0.15, 0.85, bands) * (type == BODY_GAS ? 1.0 : 0.35));
+    if (type == BODY_GAS) {
       alb = mix(alb, vec3(0.95, 0.9, 0.82), 0.25 * smoothstep(0.75, 0.95, bands));
       vec2 sd = vec2(wrapAngle(lon - seed * 1.9) * cos(lat), (lat + 0.38) * 2.4);
       float storm = smoothstep(0.2, 0.11, length(sd) + turb * 0.05);
@@ -1441,16 +1459,16 @@ vec3 bodySurface(int type, vec3 n, vec3 ax, float seed, vec3 c1, vec3 c2, float 
   }
   vec4 n1 = nz(sp * 1.4 + o, fr * 1.4), n2 = nz(sp * 4.5 + o.zxy, fr * 4.5);
   float relief = n1.r * 0.65 + n2.r * 0.35;
-  if (type == 2) {
+  if (type == BODY_ROCKY) {
     vec3 alb = mix(c2, c1, smoothstep(0.35, 0.65, relief)) * (0.85 + 0.3 * n2.g);
     return mix(alb, vec3(0.9, 0.9, 0.92), smoothstep(1.2, 1.35, abs(lat) + (n2.r - 0.5) * 0.2));
   }
-  if (type == 3) {
+  if (type == BODY_MOON) {
     float maria = smoothstep(0.52, 0.62, n1.r);
     float craters = smoothstep(0.55, 0.85, nz(sp * 6.0 + o.yzx, fr * 6.0).g);
     return mix(c1, c2, maria * 0.85) * (0.9 + 0.25 * craters - 0.1 * n2.r);
   }
-  if (type == 4) {
+  if (type == BODY_OCEAN) {
     // Ocean world: a few continents, ice caps and bands of swirling cloud.
     float cont = nz(sp * 0.5 + o, fr * 0.5).r * 0.8 + n2.r * 0.2;
     float land = smoothstep(0.52, 0.535, cont);
@@ -1469,6 +1487,8 @@ vec3 bodySurface(int type, vec3 n, vec3 ax, float seed, vec3 c1, vec3 c2, float 
 }
 
 // Planets and moons over the sky: premultiplied colour and coverage (which hides what is behind).
+// Per body, A is (direction, angular radius), B (type, brightness, rings, atmosphere), C (light
+// direction, seed) and D (roll, lean, ring inner and outer radii in planet radii).
 vec4 bodies(vec3 d, float fp) {
   vec3 acc = vec3(0.0);
   float T = 1.0;
@@ -1479,11 +1499,11 @@ vec4 bodies(vec3 d, float fp) {
     float R = A.w, cosA = dot(d, c), reach = R * max(Dd.w, 1.0) * 1.12;
     if (cosA < cos(min(reach, 3.0))) continue;
     vec2 xy = skyPlane(d, c, cosA, R);
-    float r = length(xy), fr = fp / R;
+    float r = length(xy), fr = fp / R, ringW = max(Dd.w - Dd.z, 1e-3);
     int type = int(B.x);
     vec3 ax = vec3(sin(Dd.x) * cos(Dd.y), cos(Dd.x) * cos(Dd.y), sin(Dd.y)), L = C.xyz;
     vec3 c1 = uBodyCol1[i], c2 = uBodyCol2[i];
-    vec3 atmo = mix(c1, vec3(0.55, 0.75, 1.0), type == 4 ? 0.8 : 0.3) * B.w;
+    vec3 atmo = mix(c1, vec3(0.55, 0.75, 1.0), type == BODY_OCEAN ? 0.8 : 0.3) * B.w;
     // Disk.
     float pa = clamp((1.0 - r) / fr + 0.5, 0.0, 1.0), z = sqrt(max(1.0 - r * r, 0.0));
     vec3 pc = vec3(0.0);
@@ -1491,13 +1511,13 @@ vec4 bodies(vec3 d, float fp) {
       vec3 n = vec3(xy, z), emit;
       vec3 alb = bodySurface(type, n, ax, C.w, c1, c2, fr, emit);
       float mu0 = dot(n, L);
-      float lit = type == 3 || type == 2 ? 2.0 * max(mu0, 0.0) / (max(mu0, 0.0) + max(z, 0.05)) : smoothstep(-0.08, 0.35, mu0) * max(mu0 + 0.08, 0.0) / 1.08;
+      float lit = type == BODY_MOON || type == BODY_ROCKY ? lunarShade(mu0, z) : smoothstep(-0.08, 0.35, mu0) * max(mu0 + 0.08, 0.0) / 1.08;
       if (B.z > 0.0 && abs(dot(L, ax)) > 1e-3) {
         // Shadow of the rings across the disk.
         float s = -dot(n, ax) / dot(L, ax);
         if (s > 0.0) {
           float rho = length(n + L * s);
-          float u = (rho - Dd.z) / max(Dd.w - Dd.z, 1e-3);
+          float u = (rho - Dd.z) / ringW;
           if (u > 0.0 && u < 1.0) lit *= 1.0 - 0.85 * B.z * ringDensity(u, C.w, fr);
         }
       }
@@ -1517,9 +1537,9 @@ vec4 bodies(vec3 d, float fp) {
     if (B.z > 0.0 && abs(ax.z) > 1e-3) {
       zr = -(ax.x * xy.x + ax.y * xy.y) / ax.z;
       vec3 q = vec3(xy, zr);
-      float rho = length(q), u = (rho - Dd.z) / max(Dd.w - Dd.z, 1e-3);
+      float rho = length(q), u = (rho - Dd.z) / ringW;
       if (u > 0.0 && u < 1.0) {
-        float fu = fr / max(Dd.w - Dd.z, 1e-3) / max(abs(ax.z), 0.05);
+        float fu = fr / ringW / max(abs(ax.z), 0.05);
         ra = B.z * ringDensity(u, C.w, fu);
         // The planet's shadow falls across the rings.
         float bq = dot(q, L), cq = dot(q, q) - 1.0, disc = bq * bq - cq;
@@ -1573,7 +1593,7 @@ vec3 galaxy(vec3 d, float fp) {
 vec3 meteors(vec3 d, float fp) {
   vec3 sum = vec3(0.0);
   float sigma0 = starSigma() * 1.33;
-  float se = sqrt(sigma0 * sigma0 + 0.16 * fp * fp);
+  float se = sqrt(sigma0 * sigma0 + pixVar(fp));
   for (int i = 0; i < 12; i++) {
     if (i >= uMeteorN) break;
     vec3 A = uMeteorA[i].xyz, T = uMeteorB[i].xyz;
@@ -1601,7 +1621,7 @@ vec3 meteors(vec3 d, float fp) {
 
 vec3 nightLayers(vec3 d, float fp) {
   vec3 p = d * uCel;
-  twinkleAmt = uTime.w * 0.35 * (1.3 - d.y);
+  gTwinkle = uTime.w * 0.35 * (1.3 - d.y);
   float boost = 0.0, clear = 1.0;
   vec3 c = vec3(0.0);
   if (uMW.x > 0.0) c += milkyWay(p, fp, boost, clear);
@@ -1615,7 +1635,10 @@ vec3 nightLayers(vec3 d, float fp) {
 const GLSL_CLOUDS = `
 float remap(float v, float a, float b) { return clamp((v - a) / (b - a), 0.0, 1.0); }
 
-vec3 cloudAmbient = vec3(0.0);
+// A tint colour scaled to unit luma, blended in by its alpha.
+vec3 lumaTint(vec4 t) { return mix(vec3(1.0), t.rgb / max(luma(t.rgb), 0.05), t.a); }
+
+vec3 gCloudAmb = vec3(0.0); // sky light on the ground, lighting the clouds from below
 
 float hg(float c, float g) {
   float g2 = g * g;
@@ -1625,6 +1648,9 @@ float hg(float c, float g) {
 // A layer's field in cell units: x is the puff field before thresholding, y the local coverage.
 // Weather (two very large octaves) makes coverage and cell size wander across the sky, and every
 // octave is rotated and scaled by an irrational ratio, so the tiled noise never visibly repeats.
+// Per layer, uCloudA is (cover, density, altitude, thickness), B (scale, billow, cells, streak),
+// C (detail, soft, evolution, seed), D (wind heading sin and cos, drift) and E.x how much the
+// weather varies it.
 vec2 cloudField(int i, vec2 xz, float h, float rate) {
   vec4 B = uCloudB[i], Cc = uCloudC[i], Dd = uCloudD[i];
   vec2 q = xz + Dd.zw;
@@ -1687,14 +1713,13 @@ vec4 cloudLayer(int i, vec3 d, float fp, float jitter) {
   bool moonLit = uMoonScale > uSunScale * luma(transmittance(rm, dot(up, uSunDir)));
   vec3 L = moonLit ? uMoonDir : uSunDir;
   float glow = 1.0 + uCloudLight.z * (1.0 - smoothstep(-0.05, 0.25, uSunDir.y));
-  vec3 tint = mix(vec3(1.0), uCloudTint.rgb / max(luma(uCloudTint.rgb), 0.05), uCloudTint.a);
-  vec3 lightCol = (moonLit ? uMoonScale : uSunScale * glow) * transmittance(rm, dot(up, L)) * tint * uCloudLight.w;
+  vec3 lightCol = (moonLit ? uMoonScale : uSunScale * glow) * transmittance(rm, dot(up, L)) * lumaTint(uCloudTint) * uCloudLight.w;
   vec3 ambTop = skyLight(vec3(0.0, 1.0, 0.0));
-  vec3 ambBot = cloudAmbient * 0.6;
+  vec3 ambBot = gCloudAmb * 0.6;
   ambBot += uLPColor * uLP.x * uCloudMisc.y * uNightScale * lpFocus(d) * (1.0 - 0.5 * smoothstep(0.0, 0.6, d.y));
-  vec3 shade = mix(vec3(1.0), uCloudShade.rgb / max(luma(uCloudShade.rgb), 0.05), uCloudShade.a);
-  ambTop *= shade * uCloudLight.y * uCloudLight.w;
-  ambBot *= shade * uCloudLight.y * uCloudLight.w;
+  vec3 ambK = lumaTint(uCloudShade) * uCloudLight.y * uCloudLight.w;
+  ambTop *= ambK;
+  ambBot *= ambK;
   float c = dot(d, L);
   float phase = mix(0.0796, 0.75 * hg(c, 0.82) + 0.25 * hg(c, -0.25), uCloudLight.x);
   float sigma = uCloudA[i].y * 32.0;
@@ -1736,7 +1761,7 @@ vec4 clouds(vec3 d, float fp, float jitter, vec3 amb) {
   vec3 L = vec3(0.0);
   float T = 1.0;
   if (d.y < -0.02) return vec4(L, T);
-  cloudAmbient = amb;
+  gCloudAmb = amb;
   for (int i = 0; i < 3; i++) {
     if (i >= uCloudN) break;
     vec4 c = cloudLayer(i, d, fp, jitter);
@@ -1749,6 +1774,12 @@ vec4 clouds(vec3 d, float fp, float jitter, vec3 amb) {
 `;
 
 const GLSL_LAND = `
+// The Surface and Horizon choices, numbered as their controls number them.
+const int SURF_PLAIN = 0, SURF_WATER = 1, SURF_SALT = 2, SURF_GRASS = 3, SURF_WHEAT = 4, SURF_DESERT = 5, SURF_SNOW = 6, SURF_ROCK = 7;
+const int LAND_NONE = 0, LAND_HILLS = 1, LAND_MOUNTAINS = 2, LAND_FOREST = 3, LAND_CITY = 4;
+int surfType() { return int(uSurf.x); }
+int landType() { return int(uLand.x); }
+
 vec3 horizonSky(vec3 d) { return skyLight(normalize(vec3(d.x, 0.006, d.z) + vec3(1e-5, 0.0, 0.0))); }
 
 vec3 skyAmbient() {
@@ -1760,6 +1791,7 @@ vec3 skyAmbient() {
 
 // Sun and moon irradiance at the eye, set at the start of sceneColor.
 vec3 gSunE = vec3(0.0), gMoonE = vec3(0.0);
+float gShade = 1.0; // tree shadow on the patch of ground being shaded
 
 vec3 directLight(vec3 n) {
   vec3 E = gSunE * max(dot(n, uSunDir), 0.0);
@@ -1767,7 +1799,11 @@ vec3 directLight(vec3 n) {
   return E / PI;
 }
 
-float hazeT(float km) { return exp(-km / mix(150.0, 4.0, uHaze)); }
+// Schlick's Fresnel term at cosine c; scale it by (1 - F0) and add F0.
+float schlick(float c) { return pow(clamp(1.0 - c, 0.0, 1.0), 5.0); }
+
+float hazeKm() { return mix(150.0, 4.0, uHaze); } // extinction length of the haze
+float hazeT(float km) { return exp(-km / hazeKm()); }
 
 float fogDepth(vec3 d, float dist) {
   float H = max(uFog.y, 1.0), h0 = uSurf.y;
@@ -1799,17 +1835,24 @@ const float CITY_G = 64.0;
 const mat2 LAND_ROT = mat2(0.8, 0.6, -0.6, 0.8);
 
 float landNear() { return 1000.0 * uLandB.x; }
-float landFar() { return landNear() * (uLand.x > 3.5 ? 8.0 : 8.0 + 14.0 * uLand.w); }
+float landFar() { return landNear() * (landType() == LAND_CITY ? 8.0 : 8.0 + 14.0 * uLand.w); }
 float curveDrop(float r) { return r * r / (2.0 * EARTH_R); }
 // How much larger each range is than the one in front, by distance: Ranges 1 keeps every range at
 // the same apparent height, so the nearest hides the rest; up to 4 they step back into the haze.
 float landRise(float r) { return pow(max(r / landNear(), 1.0), 0.08 * (uLand.w - 1.0)); }
 // Relief height per metre of distance, in units of tan(Height): hills, mountains, forest floor; none
 // for None and City, where only the volcano stands on the base plane.
-float landGain() { return uLand.x < 0.5 || uLand.x > 3.5 ? 0.0 : uLand.x < 1.5 ? 1.3 : uLand.x < 2.5 ? 1.8 : 0.45; }
+float landGain() {
+  int t = landType();
+  return t == LAND_NONE || t == LAND_CITY ? 0.0 : t == LAND_HILLS ? 1.3 : t == LAND_MOUNTAINS ? 1.8 : 0.45;
+}
 // Feature size (m) of the relief at the shore, and its height (m) at distance r before Ranges.
-float landScale() { return uLand.x < 1.5 ? 1700.0 : uLand.x < 2.5 ? 2600.0 : 1500.0; }
+float landScale() { return landType() <= LAND_HILLS ? 1700.0 : landType() == LAND_MOUNTAINS ? 2600.0 : 1500.0; }
 float landAmp(float r) { return tan(uLand.y * DEG) * clamp(r - 0.4 * landNear(), 0.6 * landNear(), 30000.0) * landGain(); }
+// The volcano: its distance from the eye, and its height and the radius of its foot per metre of it.
+float peakDist() { return landNear() * 14.0; }
+float peakRise() { return tan(uPeak.x * DEG); }
+float peakSpread() { return tan(min(uPeak.z, 1.3)); }
 
 // Sky light on a surface facing n: mostly the part of the sky it faces, so a facade turned away
 // from a sunset stays dusky blue instead of catching the glow behind it.
@@ -1817,7 +1860,8 @@ vec3 skyFacing(vec3 n, vec3 amb) { return 0.65 * skyLight(normalize(n + vec3(0.0
 
 float hashL(vec2 c) {
   uvec2 q = uvec2(ivec2(c) + 1048576);
-  return float(pcg(q.x ^ pcg(q.y ^ uint(uLandB.z * 977.0)))) * (1.0 / 4294967296.0);
+  uint h = q.x ^ pcg(q.y ^ uint(uLandB.z * 977.0));
+  return rnd(h);
 }
 
 // Value noise in [-1, 1] and its gradient.
@@ -1886,21 +1930,22 @@ float canopy(vec2 p, float px, inout vec2 g) {
 // Land height (m) above the base plane at p (metres from the eye) and its gradient g. Octaves finer
 // than the footprint px are left out.
 float landHeight(vec2 p, float px, out vec2 g) {
-  float r = length(p), type = uLand.x, rise = landRise(r);
+  float r = length(p), rise = landRise(r);
+  int type = landType();
   float L = landScale() * rise, A = landAmp(r) * rise;
-  int oct = A > 0.0 ? int(clamp(log2(L / max(px, 1.0)), 2.0, type < 2.5 ? 9.0 : 5.0)) : 0;
+  int oct = A > 0.0 ? int(clamp(log2(L / max(px, 1.0)), 2.0, type <= LAND_MOUNTAINS ? 9.0 : 5.0)) : 0;
   vec2 q = rot2(p, uLandB.y) / L + uLandB.z * vec2(0.71, 1.37);
-  vec3 n = relief(q, oct, type < 1.5 ? 0.35 : type < 2.5 ? 0.6 + 1.4 * uLand.z : 0.2);
+  vec3 n = relief(q, oct, type <= LAND_HILLS ? 0.35 : type == LAND_MOUNTAINS ? 0.6 + 1.4 * uLand.z : 0.2);
   float v = n.x + 0.42;
   float h = A * max(v, 0.0);
   g = v > 0.0 ? A * rot2(n.yz, -uLandB.y) / L : vec2(0.0);
-  if (type > 2.5 && type < 3.5) h += canopy(p, px, g);
+  if (type == LAND_FOREST) h += canopy(p, px, g);
   gPeak = 0.0;
   if (uPeak.x > 0.0) {
     // A stratovolcano: concave flanks scored by radial gullies, a flat crater rim on top.
-    float Dp = landNear() * 14.0;
-    vec2 dv = p - vec2(sin(uPeak.y), cos(uPeak.y)) * Dp;
-    float R = Dp * tan(min(uPeak.z, 1.3)), Hp = Dp * tan(uPeak.x * DEG);
+    float Dp = peakDist();
+    vec2 dv = p - dirXZ(uPeak.y) * Dp;
+    float R = Dp * peakSpread(), Hp = Dp * peakRise();
     float rr = length(dv) / R;
     if (rr < 1.0) {
       float prof = pow(1.0 - rr, 1.9);
@@ -1927,12 +1972,12 @@ float shoreEntry(vec3 ro, vec3 rd) {
 // Distance along the ray to the hills, mountains, forest or volcano, or -1.
 float landTrace(vec3 ro, vec3 rd, float fp) {
   // With no relief (None, City) only the volcano is traced, out to its far side.
-  bool bare = landGain() <= 0.0;
-  float far = bare ? landNear() * 14.0 * (1.0 + tan(min(uPeak.z, 1.3))) : landFar();
-  float t = shoreEntry(ro, rd), kStep = uLand.x > 1.5 && uLand.x < 2.5 ? 0.4 : 0.5;
+  bool bare = landGain() <= 0.0, forest = landType() == LAND_FOREST;
+  float far = bare ? peakDist() * (1.0 + peakSpread()) : landFar();
+  float t = shoreEntry(ro, rd), kStep = landType() == LAND_MOUNTAINS ? 0.4 : 0.5;
   // The steepest apparent slope anything can reach (relief stays below 1, so landHeight's v below
   // 1.42; the volcano adds its own): a ray climbing faster, above it, is clear.
-  float top = tan(uLand.y * DEG) * landGain() * 1.42 * landRise(far) + (uPeak.x > 0.0 ? tan(uPeak.x * DEG) : 0.0);
+  float top = tan(uLand.y * DEG) * landGain() * 1.42 * landRise(far) + (uPeak.x > 0.0 ? peakRise() : 0.0);
   float tPrev = t, dPrev = 1e9;
   for (int i = 0; i < 600; i++) {
     vec3 p = ro + rd * t;
@@ -1953,7 +1998,7 @@ float landTrace(vec3 ro, vec3 rd, float fp) {
     // that skim the land all the way out still arrive within the loop.
     // Far relief is taller for its width, so its slopes steepen with distance: a step longer than
     // the gap over the steepest of them would jump the peaks.
-    float band = uLand.x > 2.5 && uLand.x < 3.5 && fp * t < 7.0 ? 26.0 : 0.0;
+    float band = forest && fp * t < 7.0 ? 26.0 : 0.0;
     float k = min(kStep, landScale() / max(landAmp(r) * 2.0, 1e-3));
     t += max(dy > band ? (dy - band) * k + band * 0.2 : dy * 0.2, max(fp, dy > band ? 0.01 : 0.003) * t + 0.5);
   }
@@ -1964,7 +2009,7 @@ float landTrace(vec3 ro, vec3 rd, float fp) {
 // snow cap; soft shadows cast by the land itself.
 vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
   vec3 p = ro + rd * t;
-  float r = length(p.xz), type = uLand.x;
+  int type = landType();
   vec2 g;
   float h = landHeight(p.xz, fp * t * 0.35, g);
   vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
@@ -1979,13 +2024,14 @@ vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
   float snowLine = mix(2600.0, -150.0, uLandC.x);
   float ao = 1.0;
   if (gPeak > 0.5) {
-    float Hp = landNear() * 14.0 * tan(uPeak.x * DEG), e = h / max(Hp, 1.0);
-    float gully = valueNoise(vec2(atan(p.z - cos(uPeak.y) * landNear() * 14.0, p.x - sin(uPeak.y) * landNear() * 14.0) * 40.0, e * 6.0));
+    float Hp = peakDist() * peakRise(), e = h / max(Hp, 1.0);
+    vec2 dv = p.xz - dirXZ(uPeak.y) * peakDist();
+    float gully = valueNoise(vec2(atan(dv.y, dv.x) * 40.0, e * 6.0));
     alb = mix(vec3(0.09, 0.08, 0.075), vec3(0.16, 0.13, 0.11), n1) * (0.8 + 0.4 * n2);
     alb = mix(alb, forest, smoothstep(0.32, 0.18, e + 0.08 * n1));
     float snow = smoothstep(1.0 - uPeak.w - 0.03, 1.0 - uPeak.w + 0.03, e + (gully - 0.5) * 0.22);
     alb = mix(alb, vec3(0.84, 0.86, 0.9), snow);
-  } else if (type > 2.5 && type < 3.5) {
+  } else if (type == LAND_FOREST) {
     // Forest: broadleaf crowns lighter and yellower than conifers; darker deep in each crown.
     vec3 crown = mix(vec3(0.045, 0.065, 0.022), vec3(0.015, 0.028, 0.02), uLandC.z) * (0.7 + 0.6 * n2);
     alb = mix(crown, uLandColor * 0.5, 0.15) * (0.75 + 0.5 * hashL(floor(p.xz / 10.0)));
@@ -2019,6 +2065,9 @@ vec3 landShade(vec3 ro, vec3 rd, float t, float fp, vec3 amb) {
 
 // ── City ──
 
+// Building heights (m) scale with the Height setting.
+float cityHeight(float m) { return m * uLand.y * 0.5; }
+
 // The building on lot c: (centre, height, id). Avenues every sixth row and column; a downtown of
 // towers out along the land heading, low-rise blocks elsewhere.
 vec4 cityLot(vec2 c, out vec2 hs) {
@@ -2027,13 +2076,13 @@ vec4 cityLot(vec2 c, out vec2 hs) {
   hs = vec2(0.0);
   if (r < near * 1.04 || r > landFar() || mod(c.x, 6.0) < 1.0 || mod(c.y, 6.0) < 1.0) return vec4(0.0);
   float h1 = hashL(c * 1.31 + 17.0), h2 = hashL(c + 3.7);
-  vec2 dc = vec2(sin(uLandB.y), cos(uLandB.y)) * near * 4.2;
+  vec2 dc = dirXZ(uLandB.y) * near * 4.2;
   float down = exp(-dot(cen - dc, cen - dc) / (2.0 * near * near * 1.1));
   float tower = down * step(0.55, h2);
   float H = (7.0 + 26.0 * h1 * h1) * (0.45 + 0.8 * valueNoise(cen / 700.0 + uLandB.z)) + tower * (60.0 + 320.0 * pow(hashL(c + 7.7), 1.6)) + down * 25.0 * h1;
   // Towers are slim; low-rise blocks fill more of their lots.
   hs = CITY_G * mix(vec2(0.3 + 0.15 * hashL(c * 0.71 + 9.1), 0.3 + 0.15 * hashL(c + 21.3)), vec2(0.2 + 0.1 * hashL(c + 2.9)), tower);
-  return vec4(cen, H * uLand.y * 0.5, h1);
+  return vec4(cen, cityHeight(H), h1);
 }
 
 vec4 gLot = vec4(0.0);
@@ -2042,7 +2091,7 @@ float gBeacon = 0.0;  // red aviation lights the ray passed close to
 // The first building face or street a ray meets, walking the lot grid cell by cell, or -1.
 float cityTrace(vec3 ro, vec3 rd, float fp, out vec3 n) {
   // Above top (over the tallest building cityLot can make, 446 m before scaling) nothing is hit.
-  float t = shoreEntry(ro, rd), top = 450.0 * uLand.y * 0.5 - uSurf.y;
+  float t = shoreEntry(ro, rd), top = cityHeight(450.0) - uSurf.y;
   n = vec3(0.0, 1.0, 0.0);
   vec2 v = rd.xz, o = ro.xz + v * t, c = floor(o / CITY_G), s = vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
   vec2 inv = 1.0 / max(abs(v), vec2(1e-7));
@@ -2099,7 +2148,7 @@ vec3 cityShade(vec3 ro, vec3 rd, float t, vec3 n, float fp, vec3 amb) {
     float lod = smoothstep(0.2, 0.8, px / cw), winAvg = glassy ? 0.72 : 0.31;
     float cover = mix(win, winAvg, lod);
     vec3 R = reflect(rd, n);
-    float fres = 0.04 + 0.96 * pow(clamp(1.0 - dot(-rd, n), 0.0, 1.0), 5.0);
+    float fres = 0.04 + 0.96 * schlick(dot(-rd, n));
     vec3 refl = mix(horizonSky(R), physicalSky(normalize(vec3(R.x, max(R.y, 0.02), R.z))), smoothstep(0.0, 0.3, R.y));
     refl += sunLight(normalize(R + vec3(0.0, 1e-4, 0.0)), max(fp, 0.004)) * 0.3;
     vec3 sky = skyFacing(n, amb);
@@ -2117,11 +2166,17 @@ vec3 cityShade(vec3 ro, vec3 rd, float t, vec3 n, float fp, vec3 amb) {
   return c;
 }
 
+// Noise over the ground at P (m) with features about scale metres across, read from slice z of the
+// tile, and its gradient in channel ch (0 red, else alpha).
+vec4 groundNz(vec2 P, float scale, float z, float rate) { return nz(vec3(P / scale * 0.1, z), rate / scale * 0.1); }
+
 vec2 noiseGrad(vec3 c, float rate, int ch) {
   const float e = 0.01;
   vec4 a = nz(c, rate), bx = nz(c + vec3(e, 0.0, 0.0), rate), by = nz(c + vec3(0.0, e, 0.0), rate);
   return ch == 0 ? vec2(bx.r - a.r, by.r - a.r) / e : vec2(bx.a - a.a, by.a - a.a) / e;
 }
+
+vec2 groundGrad(vec2 P, float scale, float z, float rate, int ch) { return noiseGrad(vec3(P / scale * 0.1, z), rate / scale * 0.1, ch); }
 
 // ── Water ──
 
@@ -2140,7 +2195,7 @@ float glint(vec3 n, vec3 v, vec3 l, float a2) {
   float nh2 = max(dot(n, h), 1e-3);
   nh2 *= nh2;
   float D = exp((nh2 - 1.0) / (nh2 * a2)) / (PI * a2 * nh2 * nh2);
-  float F = 0.02 + 0.98 * pow(clamp(1.0 - dot(v, h), 0.0, 1.0), 5.0);
+  float F = 0.02 + 0.98 * schlick(dot(v, h));
   return F * D * smithG1(nv, a2) * smithG1(min(nl, 1.0), a2) / (4.0 * nv);
 }
 
@@ -2153,7 +2208,7 @@ vec2 waves(vec2 P, vec2 vh, float fpD, float graze, out vec3 n) {
   float t = uTime.y * uSurfC.z, S = uSurf.z, stretch2 = 1.0 / (graze * graze);
   float rate = fpD / graze;
   // Wave groups: slowly drifting amplitude patches stop the components reading as a lattice.
-  vec4 grp = nz(vec3(P / (90.0 * S) * 0.1, 0.19 + t * 0.0007), rate / (90.0 * S) * 0.1) * 1.6 - 0.3;
+  vec4 grp = groundNz(P, 90.0 * S, 0.19 + t * 0.0007, rate) * 1.6 - 0.3;
   vec3 g = vec3(0.0);
   float cr = 0.0, cs = 1e-6, mss = 0.0;
   for (int i = 0; i < WAVES; i++) {
@@ -2172,14 +2227,14 @@ vec2 waves(vec2 P, vec2 vh, float fpD, float graze, out vec3 n) {
     mss += 0.5 * s * s * (1.0 - vis * vis);
   }
   // Wind ripples: two octaves of stretched, animated noise carry the finest slopes.
-  vec2 wd = vec2(sin(uSurfC.x), cos(uSurfC.x));
-  vec2 q = vec2(dot(P, wd), dot(P, vec2(wd.y, -wd.x)) * 0.55);
+  vec2 wd = dirXZ(uSurfC.x);
+  vec2 q = toFrame(P, wd) * vec2(1.0, 0.55);
   float lr = 0.6 * S, sr = sqrt(uWaveFx.z);
   for (int o = 0; o < 2; o++) {
     float vis = smoothstep(1.5, 4.0, lr / rate);
     if (vis > 0.0) {
       vec2 gr = noiseGrad(vec3((q - vec2(t * 0.35 * sqrt(lr), 0.0)) / lr * 0.25, 0.53 + float(o) * 0.31 + t * 0.03 / sqrt(lr)), rate / lr * 0.25, 0) * 0.25 * sr * vis;
-      g.xy += gr.x * wd + gr.y * vec2(wd.y, -wd.x);
+      g.xy += fromFrame(gr, wd);
     }
     mss += uWaveFx.z * (1.0 - vis * vis);
     lr *= 0.3;
@@ -2210,7 +2265,7 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
   vec3 n;
   vec2 w = waves(P, normalize(d.xz + 1e-6), fp * Dm, max(-d.y, 0.003), n);
   vec3 v = -d;
-  F = (0.02 + 0.98 * pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 5.0)) * uSurfB.a;
+  F = (0.02 + 0.98 * schlick(dot(n, v))) * uSurfB.a;
   r = reflect(d, n);
   // Even flat water reflects only E / Dm above the horizon, so only facets that tilt the ray
   // below it count, and the clamp stays small enough not to lift the shore's mirror image.
@@ -2221,18 +2276,18 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
   if (uMoon.x > 0.0) {
     // The disk is drawn far below its true radiance so its face stays visible; the glitter path
     // uses a brighter moon so it reads the way it does in a night photograph.
-    spec += skyExtinction(uMoonDir.y) * uMoon.z * 250.0 * PI * uMoon.y * uMoon.y * (0.5 + 0.5 * uMoonLight.z) * glint(n, v, uMoonDir, w.x + 2e-5 + uMoon.y * uMoon.y);
+    spec += skyExtinction(uMoonDir.y) * uMoon.z * 250.0 * PI * uMoon.y * uMoon.y * moonLitFrac() * glint(n, v, uMoonDir, w.x + 2e-5 + uMoon.y * uMoon.y);
   }
   vec3 E = directLight(vec3(0.0, 1.0, 0.0)) * gShade + amb;
   vec3 body;
-  if (int(uSurf.x) == 2) {
+  if (surfType() == SURF_SALT) {
     // Salt crust under a thin film: polygonal ridges break through the mirror.
-    float S = uSurf.z;
-    vec2 c = worley2(P / (1.6 * S));
-    float ridge = 1.0 - smoothstep(0.0, 0.06 + 0.5 * rate / (1.6 * S), c.y - c.x);
-    float far = smoothstep(0.02, 0.3, rate / (1.6 * S));
+    float S = uSurf.z, poly = 1.6 * S;
+    vec2 c = worley2(P / poly);
+    float ridge = 1.0 - smoothstep(0.0, 0.06 + 0.5 * rate / poly, c.y - c.x);
+    float far = smoothstep(0.02, 0.3, rate / poly);
     ridge = mix(ridge, 0.12, far);
-    float tone = nz(vec3(P / (40.0 * S) * 0.1, 0.33), rate / (40.0 * S) * 0.1).r;
+    float tone = groundNz(P, 40.0 * S, 0.33, rate).r;
     body = mix(uSurfA.rgb, uSurfB.rgb, 0.35 * tone) * (0.9 + 0.25 * ridge) * E;
     F *= 1.0 - 0.8 * ridge * (1.0 - far);
     spec *= 1.0 - 0.8 * ridge * (1.0 - far);
@@ -2245,8 +2300,7 @@ vec3 waterSurface(vec3 d, float Dm, float rate, float fp, vec3 amb, out float F,
   }
   vec3 col = body * (1.0 - F) + spec * uSurfB.a;
   if (uWaveFx.y > 0.0) {
-    vec2 wd = vec2(sin(uSurfC.x), cos(uSurfC.x));
-    vec2 q = vec2(dot(P, wd), dot(P, vec2(wd.y, -wd.x))) / uSurf.z;
+    vec2 q = toFrame(P, dirXZ(uSurfC.x)) / uSurf.z;
     float t = uTime.y * uSurfC.z;
     float streak = nz(vec3(q * vec2(0.012, 0.06) + vec2(-t * 0.004, 0.0), 0.37), rate * 0.06 / uSurf.z).r;
     float speck = nz(vec3(q * 0.35, 0.71 + t * 0.002), rate * 0.35 / uSurf.z).g;
@@ -2269,7 +2323,10 @@ vec2 gWind, gCell, gLean, gOff; // grid u axis (world xz), cell size, lean direc
 float gSigma;
 bool gWheat;
 
-struct Blade { vec2 root; vec2 nh; float kb; float ka; float hy; float w; float kind; uint h; };
+// Blade kinds: a leaf blade, a seed-head stem standing above the canopy, a flower, a wheat stalk.
+const int BLADE_LEAF = 0, BLADE_STEM = 1, BLADE_FLOWER = 2, BLADE_WHEAT = 3;
+
+struct Blade { vec2 root; vec2 nh; float kb; float ka; float hy; float w; int kind; uint h; };
 
 float grassGust(vec2 uv, float t) {
   return 0.55 * sin(uv.x * 0.8 - t * 1.9 + 0.8 * sin(uv.y * 0.27 + t * 0.15))
@@ -2282,24 +2339,24 @@ Blade grassBlade(ivec2 c, int k, float t) {
   uint h = hash3u(uvec3(uvec2(c + 1000000), uint(k) + 977u));
   float u0 = rnd(h), v0 = 0.18 + 0.64 * rnd(h);
   b.root = (vec2(c) + vec2(u0, v0)) * gCell - gOff;
-  // Kind: 0 leaf blade, 1 seed-head stem standing above the canopy, 2 flower, 3 wheat stalk.
-  float kind = rnd(h), len;
+  float pick = rnd(h), len;
   if (gWheat) {
     v0 = 0.22 + 0.56 * v0;
     b.root.y = (float(c.y) + v0) * gCell.y - gOff.y;
-    b.kind = kind < 0.82 ? 3.0 : 0.0;
-    len = uGrass.x * (b.kind > 2.5 ? 0.86 + 0.14 * rnd(h) : 0.3 + 0.3 * rnd(h)) * (0.92 + 0.16 * valueNoise(b.root * 0.4 + 3.3));
-    b.w = uGrass.z * (b.kind > 2.5 ? 0.6 : 1.4);
+    b.kind = pick < 0.82 ? BLADE_WHEAT : BLADE_LEAF;
+    len = uGrass.x * (b.kind == BLADE_WHEAT ? 0.86 + 0.14 * rnd(h) : 0.3 + 0.3 * rnd(h)) * (0.92 + 0.16 * valueNoise(b.root * 0.4 + 3.3));
+    b.w = uGrass.z * (b.kind == BLADE_WHEAT ? 0.6 : 1.4);
   } else {
-    b.kind = kind < uGrassB.y * 0.12 ? 2.0 : kind > 0.93 ? 1.0 : 0.0;
-    len = uGrass.x * (b.kind > 0.5 ? 1.05 + 0.4 * rnd(h) : (0.45 + 0.55 * rnd(h)) * (0.6 + 0.8 * valueNoise(b.root * 1.3 + 7.1)));
-    b.w = uGrass.z * (b.kind > 0.5 ? 0.35 : 0.7 + 0.6 * rnd(h));
+    b.kind = pick < uGrassB.y * 0.12 ? BLADE_FLOWER : pick > 0.93 ? BLADE_STEM : BLADE_LEAF;
+    len = uGrass.x * (b.kind != BLADE_LEAF ? 1.05 + 0.4 * rnd(h) : (0.45 + 0.55 * rnd(h)) * (0.6 + 0.8 * valueNoise(b.root * 1.3 + 7.1)));
+    b.w = uGrass.z * (b.kind != BLADE_LEAF ? 0.35 : 0.7 + 0.6 * rnd(h));
   }
+  bool flower = b.kind == BLADE_FLOWER;
   float gust = grassGust(b.root, t) + 0.25 * sin(t * (2.0 + 2.0 * rnd(h)) + rnd(h) * TAU);
-  float lean = len * clamp(0.06 + 0.55 * uGrass.w * rnd(h) + 0.12 * uSurfA.a * (1.0 + gust), 0.0, 0.85) * (b.kind > 0.5 && b.kind < 2.5 ? 0.4 : 1.0);
-  float side = b.kind > 1.5 && b.kind < 2.5 ? 0.0 : (rnd(h) - 0.5) * 0.8;
+  float lean = len * clamp(0.06 + 0.55 * uGrass.w * rnd(h) + 0.12 * uSurfA.a * (1.0 + gust), 0.0, 0.85) * (b.kind == BLADE_STEM || flower ? 0.4 : 1.0);
+  float side = flower ? 0.0 : (rnd(h) - 0.5) * 0.8;
   vec2 L = lean * normalize(gLean + vec2(-gLean.y, gLean.x) * side);
-  float m = min(v0, 1.0 - v0) * gCell.y - (b.kind > 1.5 && b.kind < 2.5 ? 0.012 : 0.5 * b.w);
+  float m = min(v0, 1.0 - v0) * gCell.y - (flower ? 0.012 : 0.5 * b.w);
   L = vec2(clamp(L.x, -u0 * gCell.x, (2.0 - u0) * gCell.x - b.w), clamp(L.y, -max(m, 0.0), max(m, 0.0)));
   b.hy = sqrt(max(len * len - dot(L, L), 0.05 * len * len));
   float phi = rnd(h) * TAU;
@@ -2317,7 +2374,7 @@ float bladeHit(Blade b, vec3 rd, float tA, float tB, float pw0, out float tHit, 
   float a0 = -dot(b.root, b.nh), da = dot(rd.xy, b.nh);
   float b0 = -dot(b.root, wv), db = dot(rd.xy, wv);
   float E = uSurf.y, dy = rd.z;
-  if (b.kind > 1.5 && b.kind < 2.5) {
+  if (b.kind == BLADE_FLOWER) {
     // Flower head: a small sphere on the stem tip.
     vec3 c = vec3(b.root + (b.kb * b.nh + b.ka * wv) * b.hy * b.hy, b.hy) - vec3(0.0, 0.0, E);
     float r = 0.012 * uGrass.z / 0.006, bq = dot(rd, c), cq = dot(c, c) - r * r, disc = bq * bq - cq;
@@ -2347,9 +2404,9 @@ float bladeHit(Blade b, vec3 rd, float tA, float tB, float pw0, out float tHit, 
     if (t < tA || t > tB) continue;
     float yy = (E + dy * t) / b.hy;
     if (yy < 0.0 || yy > 1.0) continue;
-    float prof = b.kind < 0.5 ? pow(clamp((1.0 - yy) * 3.0, 0.0, 1.0), 0.6)
-               : b.kind < 1.5 && yy > 0.72 ? 1.0 + 3.2 * sin(PI * min((yy - 0.72) / 0.3, 1.0)) * smoothstep(1.0, 0.96, yy)
-               : b.kind > 2.5 && yy > 0.86 ? 1.0 + 2.6 * sqrt(max(sin(PI * min((yy - 0.86) / 0.15, 1.0)), 0.0)) * smoothstep(1.0, 0.975, yy) : 1.0;
+    float prof = b.kind == BLADE_LEAF ? pow(clamp((1.0 - yy) * 3.0, 0.0, 1.0), 0.6)
+               : b.kind == BLADE_STEM && yy > 0.72 ? 1.0 + 3.2 * sin(PI * min((yy - 0.72) / 0.3, 1.0)) * smoothstep(1.0, 0.96, yy)
+               : b.kind == BLADE_WHEAT && yy > 0.86 ? 1.0 + 2.6 * sqrt(max(sin(PI * min((yy - 0.86) / 0.15, 1.0)), 0.0)) * smoothstep(1.0, 0.975, yy) : 1.0;
     float hw = 0.5 * b.w * prof;
     float off = b0 + db * t - b.ka * (yy * b.hy) * (yy * b.hy);
     // Overlap of the blade with the pixel footprint, so sub-pixel blades add the right coverage.
@@ -2377,7 +2434,7 @@ vec3 grassLight(vec3 alb, vec3 n, vec3 d, float y, float gap, vec3 amb) {
   float ndl = dot(n, L);
   vec3 lit = ndl > 0.0 ? alb * ndl : alb * vec3(1.3, 1.5, 0.55) * (-ndl);
   vec3 hv = normalize(L - d);
-  float spec = ndl > 0.0 ? (0.04 + 0.96 * pow(clamp(1.0 - dot(-d, hv), 0.0, 1.0), 5.0)) * 2.3 * pow(max(dot(n, hv), 0.0), 50.0) * ndl : 0.0;
+  float spec = ndl > 0.0 ? (0.04 + 0.96 * schlick(dot(-d, hv))) * 2.3 * pow(max(dot(n, hv), 0.0), 50.0) * ndl : 0.0;
   col += (lit / PI + spec) * gSunE * shadow * gShade;
   if (uMoonScale > 0.0) col += alb * max(dot(n, uMoonDir), 0.0) / PI * gMoonE * shadow;
   return col;
@@ -2386,21 +2443,20 @@ vec3 grassLight(vec3 alb, vec3 n, vec3 d, float y, float gap, vec3 amb) {
 const vec3 STRAW = vec3(0.34, 0.25, 0.11);
 
 vec3 shadeBlade(Blade b, vec3 d, float t, float y, float side, vec3 amb) {
-  vec2 wp = vec2(gWind.y, -gWind.x);
   uint h = b.h;
   float r1 = rnd(h), r2 = rnd(h), r3 = rnd(h);
   if (side > 1.5) {
     // Flower head: sphere normal, petals lit with some translucency.
     vec2 wv0 = vec2(-b.nh.y, b.nh.x);
     vec2 cu = b.root + (b.kb * b.nh + b.ka * wv0) * b.hy * b.hy;
-    vec3 c = vec3(cu.x * gWind + cu.y * wp, b.hy).xzy;
+    vec3 c = vec3(fromFrame(cu, gWind), b.hy).xzy;
     vec3 p = vec3(d.xz * t, uSurf.y + d.y * t).xzy;
     vec3 n = normalize(p - c);
     vec3 alb = uFlower * (0.75 + 0.5 * r1);
     alb = mix(alb, alb.gbr, step(0.85, r2) * 0.6);
     return grassLight(alb, normalize(n + vec3(0.0, 0.4, 0.0)), d, y, r3 * 0.3, amb) * 1.3;
   }
-  vec2 nh = b.nh.x * gWind + b.nh.y * wp, wv = -b.nh.y * gWind + b.nh.x * wp;
+  vec2 nh = fromFrame(b.nh, gWind), wv = fromFrame(vec2(-b.nh.y, b.nh.x), gWind);
   vec3 n = normalize(vec3(nh.x, -2.0 * b.kb * y, nh.y));
   if (dot(n, d) > 0.0) n = -n;
   n = normalize(n + vec3(wv.x, 0.0, wv.y) * side * 0.35);
@@ -2411,14 +2467,14 @@ vec3 shadeBlade(Blade b, vec3 d, float t, float y, float side, vec3 amb) {
   if (gWheat) {
     // Stalk colour up to the ear, the ear itself in the accent colour; leaves stay greener.
     vec3 stalk = uSurfA.rgb * (0.8 + 0.4 * r1), ear = uSurfB.rgb * (0.8 + 0.4 * r1);
-    alb = b.kind > 2.5 ? mix(stalk, ear, smoothstep(0.84, 0.9, yy)) : mix(uSurfA.rgb * vec3(0.7, 0.85, 0.5), stalk, 0.5 + 0.5 * uGrassB.x);
-  } else if (b.kind > 0.5) alb = mix(uSurfB.rgb, STRAW, b.kind < 1.5 ? smoothstep(0.6, 0.8, yy) : 0.2);
+    alb = b.kind == BLADE_WHEAT ? mix(stalk, ear, smoothstep(0.84, 0.9, yy)) : mix(uSurfA.rgb * vec3(0.7, 0.85, 0.5), stalk, 0.5 + 0.5 * uGrassB.x);
+  } else if (b.kind != BLADE_LEAF) alb = mix(uSurfB.rgb, STRAW, b.kind == BLADE_STEM ? smoothstep(0.6, 0.8, yy) : 0.2);
   else if (r2 < uGrassB.x * 0.5) alb = mix(alb, STRAW, 0.7);
   return grassLight(alb, n, d, y, r3, amb);
 }
 
 vec3 grassGround(vec2 P, float rate, vec3 amb) {
-  float n1 = nz(vec3(P / 0.6 * 0.1, 0.61), rate / 0.6 * 0.1).r;
+  float n1 = groundNz(P, 0.6, 0.61, rate).r;
   vec3 alb = gWheat ? vec3(0.09, 0.065, 0.04) * (0.7 + 0.6 * n1)
                     : mix(uSurfA.rgb * 0.5, vec3(0.05, 0.04, 0.02), 0.45) * (0.6 + 0.8 * n1);
   float shadow = exp(-gSigma * uGrass.x / max(uSunDir.y, 0.04)) * gShade;
@@ -2460,14 +2516,14 @@ vec3 grassCanopy(vec3 d, vec2 P, float rate, vec3 soil, vec3 amb) {
   vec3 col = mix(sum / 20.0, soil, exp(-tauTot));
   // Structure the eye still resolves: clumps, dry patches, gusts combing across the field, and
   // blade-scale streaks that carry the traced texture past the hand-off distance.
-  vec4 nA = nz(vec3(P / (5.0 * S) * 0.1, 0.23), rate / (5.0 * S) * 0.1);
-  vec4 nB = nz(vec3(P / (18.0 * S) * 0.1, 0.41), rate / (18.0 * S) * 0.1);
-  float gust = grassGust(vec2(dot(P, gWind), dot(P, vec2(gWind.y, -gWind.x))), uTime.y * uSurfC.z);
+  vec4 nA = groundNz(P, 5.0 * S, 0.23, rate);
+  vec4 nB = groundNz(P, 18.0 * S, 0.41, rate);
+  float gust = grassGust(toFrame(P, gWind), uTime.y * uSurfC.z);
   vec2 q = vec2(dot(P, vec2(-dh.y, dh.x)) / (1.2 * gCell.y), dot(P, dh) / max(0.6 * H * cot, 0.05));
   float streak = mix(valueNoise(q) + 0.5 * valueNoise(q * vec2(2.3, 1.0) + 9.1) - 0.75, 0.0, smoothstep(0.3, 1.0, rate / (1.2 * gCell.y)));
   col *= (0.88 + 0.24 * nA.r) * (0.92 + 0.16 * nB.g) * (1.0 + 0.1 * uSurfA.a * gust) * (1.0 + 0.7 * streak);
   if (gWheat) {
-    float rows = cos(TAU * dot(P, vec2(gWind.y, -gWind.x)) / gCell.y);
+    float rows = cos(TAU * toFrame(P, gWind).y / gCell.y);
     return col * (1.0 + 0.12 * rows * (1.0 - smoothstep(0.25, 0.8, rate / gCell.y)));
   }
   return mix(col, col * vec3(1.25, 1.0, 0.55), smoothstep(0.55, 0.8, nB.a) * uGrassB.x);
@@ -2476,8 +2532,7 @@ vec3 grassCanopy(vec3 d, vec2 P, float rate, vec3 soil, vec3 amb) {
 // Premultiplied grass radiance (rgb) and coverage (a) along the ray between t0 and t1; tEnd is
 // how far the traversal got before running out of steps.
 vec4 grassTrace(vec3 d, float t0, float t1, float tFade, float fp, vec3 amb, out float tEnd) {
-  vec2 wp = vec2(gWind.y, -gWind.x);
-  vec3 rd = vec3(dot(d.xz, gWind), dot(d.xz, wp), d.y);
+  vec3 rd = vec3(toFrame(d.xz, gWind), d.y);
   vec2 dg = rd.xy / gCell, g0 = (rd.xy * t0 + gOff) / gCell;
   ivec2 c = ivec2(floor(g0));
   vec2 sg = vec2(dg.x >= 0.0 ? 1.0 : -1.0, dg.y >= 0.0 ? 1.0 : -1.0);
@@ -2514,14 +2569,14 @@ vec4 grassTrace(vec3 d, float t0, float t1, float tFade, float fp, vec3 amb, out
 }
 
 void grassSetup() {
-  vec2 wind = vec2(sin(uSurfC.x), cos(uSurfC.x));
+  vec2 wind = dirXZ(uSurfC.x);
   float n = uGrass.y * 600.0;
-  gWheat = int(uSurf.x) == 4;
+  gWheat = surfType() == SURF_WHEAT;
   if (gWheat) {
     // Crop rows: u runs along the rows (pointing downwind) and v across, one row per cell.
-    vec2 row = vec2(sin(uSurfC.w), cos(uSurfC.w));
+    vec2 row = dirXZ(uSurfC.w);
     gWind = dot(row, wind) < 0.0 ? -row : row;
-    gLean = normalize(vec2(dot(wind, gWind), dot(wind, vec2(gWind.y, -gWind.x))) + vec2(0.4, 0.0));
+    gLean = normalize(toFrame(wind, gWind) + vec2(0.4, 0.0));
     gCell = vec2(float(GRASS_K) / (n * 0.17), 0.17);
     gOff = vec2(0.0, 0.5 * gCell.y); // stand in a row, not in a gap
   } else {
@@ -2540,7 +2595,10 @@ void grassSetup() {
 // ellipsoids of leaf clusters, or tiered cones for conifers); trunks and limbs are capsules.
 
 const int MAX_TREES = 16;
+const int TREE_BROADLEAF = 0, TREE_CONIFER = 1, TREE_BIRCH = 2;
 
+// A tree: where it stands, its crown's centre and radii above that, height, seed and kind, and its
+// trunk's radius and the height it reaches (a conifer's stops inside its lower crown).
 struct Tree { vec3 base; vec3 c; vec3 R; float h; float seed; int type; float rt; float trunk; };
 
 Tree treeAt(int i) {
@@ -2551,12 +2609,11 @@ Tree treeAt(int i) {
   tr.type = int(T.w / 1000.0);
   tr.seed = mod(T.w, 1000.0);
   float w = uTreeLook.z * (0.85 + 0.3 * fract(tr.seed * 0.618));
-  if (tr.type == 1) { tr.c = vec3(0.0, 0.55, 0.0) * tr.h; tr.R = vec3(0.2 * w, 0.46, 0.2 * w) * tr.h; }
-  else if (tr.type == 2) { tr.c = vec3(0.0, 0.64, 0.0) * tr.h; tr.R = vec3(0.24 * w, 0.34, 0.24 * w) * tr.h; }
+  if (tr.type == TREE_CONIFER) { tr.c = vec3(0.0, 0.55, 0.0) * tr.h; tr.R = vec3(0.2 * w, 0.46, 0.2 * w) * tr.h; }
+  else if (tr.type == TREE_BIRCH) { tr.c = vec3(0.0, 0.64, 0.0) * tr.h; tr.R = vec3(0.24 * w, 0.34, 0.24 * w) * tr.h; }
   else { tr.c = vec3(0.0, 0.6, 0.0) * tr.h; tr.R = vec3(0.44 * w, 0.37, 0.44 * w) * tr.h; }
-  // Trunk radius and the height the trunk reaches (a conifer's stops inside its lower crown).
-  tr.rt = tr.h * (tr.type == 1 ? 0.016 : tr.type == 2 ? 0.014 : 0.024);
-  tr.trunk = tr.type == 1 ? 0.42 * tr.h : tr.c.y;
+  tr.rt = tr.h * (tr.type == TREE_CONIFER ? 0.016 : tr.type == TREE_BIRCH ? 0.014 : 0.024);
+  tr.trunk = tr.type == TREE_CONIFER ? 0.42 * tr.h : tr.c.y;
   return tr;
 }
 
@@ -2609,7 +2666,7 @@ float treeWood(Tree tr, vec3 ro, vec3 rd, out vec3 n, out float v) {
   vec3 pa = tr.base - vec3(0.0, 0.5, 0.0), pb = tr.base + vec3(0.0, tr.trunk, 0.0);
   float t = capsule(ro, rd, pa, pb, tr.rt), best = t > 0.0 ? t : 1e9;
   float rr = tr.rt;
-  if (tr.type != 1) {
+  if (tr.type != TREE_CONIFER) {
     vec3 fork = tr.base + vec3(0.0, tr.c.y - 0.75 * tr.R.y, 0.0);
     for (int k = 0; k < 4; k++) {
       vec3 e = limbEnd(tr, k);
@@ -2625,19 +2682,24 @@ float treeWood(Tree tr, vec3 ro, vec3 rd, out vec3 n, out float v) {
   return best;
 }
 
+// A conifer's cone runs from a tenth of its height to its tip: the height up it (0..1) at y above
+// the base, and the cone's radius there relative to its foot.
+float coneY(Tree tr, float y) { return (y - 0.1 * tr.h) / (0.9 * tr.h); }
+float coneRadius(float yy) { return pow(clamp(1.0 - yy, 0.0, 1.0), 0.95); }
+
 // Returns (density, cluster signal): the signal is high in the core of a leaf clump.
 vec2 crownDensity(Tree tr, vec3 p, float rate) {
   vec3 l = p - tr.base;
-  if (tr.type == 1) {
+  if (tr.type == TREE_CONIFER) {
     // Conifer: a cone of drooping branch tiers whose tips reach out at uneven lengths.
-    float yy = (l.y - 0.1 * tr.h) / (0.9 * tr.h);
+    float yy = coneY(tr, l.y);
     if (yy < 0.0 || yy > 1.0) return vec2(0.0);
     float rr = length(l.xz) / tr.R.x, ang = atan(l.z, l.x);
     float nt = 10.0 + 4.0 * fract(tr.seed * 0.31), ti = floor(yy * nt + rr * 0.6);
     float tier = fract(yy * nt + rr * 0.6);
     float reach = 0.7 + 0.45 * valueNoise(vec2(ang * 2.2 + ti * 1.7, ti + tr.seed));
     vec4 n1 = nz(l / (tr.h * 0.05) * 0.1 + tr.seed * 0.137, rate / (tr.h * 0.05) * 0.1);
-    float Rc = pow(1.0 - yy, 0.95) * mix(1.0, 0.62, tier) * reach * (0.88 + 0.24 * n1.r);
+    float Rc = coneRadius(yy) * mix(1.0, 0.62, tier) * reach * (0.88 + 0.24 * n1.r);
     // Each whorl splits into separate drooping limbs, with needle clumps along them.
     float spoke = abs(fract(ang * (1.1 + 0.18 * mod(ti, 3.0)) + ti * 0.37) - 0.5) * 2.0;
     float limbs = smoothstep(0.95, 0.55, spoke + rr * 0.35 - 0.25);
@@ -2646,7 +2708,7 @@ vec2 crownDensity(Tree tr, vec3 p, float rate) {
   }
   float shape = crownShape(tr, l);
   if (shape < -0.35) return vec2(0.0);
-  float cs = tr.h * (tr.type == 2 ? 0.08 : 0.12);
+  float cs = tr.h * (tr.type == TREE_BIRCH ? 0.08 : 0.12);
   vec3 w = l / cs + tr.seed * vec3(0.37, 0.71, 0.13);
   vec4 n1 = nz(w * 0.1, rate / cs * 0.1);
   shape += (n1.r - 0.5) * 0.7;
@@ -2661,10 +2723,10 @@ vec2 crownDensity(Tree tr, vec3 p, float rate) {
 
 // Sunlight reaching p through its own crown (no shadows between trees).
 float crownSun(Tree tr, vec3 p) {
-  if (tr.type == 1) {
+  if (tr.type == TREE_CONIFER) {
     // Horizontal depth to the sunward side of the cone at this height.
     vec3 l = p - tr.base;
-    float Rc = tr.R.x * pow(clamp(1.0 - (l.y - 0.1 * tr.h) / (0.9 * tr.h), 0.0, 1.0), 0.95);
+    float Rc = tr.R.x * coneRadius(coneY(tr, l.y));
     vec2 sh = normalize(uSunDir.xz + 1e-5);
     float side = dot(l.xz, sh), across = dot(l.xz, vec2(-sh.y, sh.x));
     float depth = max(sqrt(max(Rc * Rc - across * across, 0.0)) - side, 0.0) / max(length(uSunDir.xz), 0.2);
@@ -2676,8 +2738,8 @@ float crownSun(Tree tr, vec3 p) {
 
 vec3 foliage(Tree tr, vec3 p) {
   uint h = hash3u(uvec3(ivec3(floor((p - tr.base) / (tr.h * 0.1))) + 4096) + uint(tr.seed * 7.0));
-  vec3 base = tr.type == 1 ? uTreeColor * vec3(0.42, 0.58, 0.62) : tr.type == 2 ? uTreeColor * vec3(1.25, 1.2, 0.7) : uTreeColor;
-  float autumn = uTreeLook.y * (0.4 + 0.6 * fract(tr.seed * 0.73)) * float(tr.type != 1);
+  vec3 base = tr.type == TREE_CONIFER ? uTreeColor * vec3(0.42, 0.58, 0.62) : tr.type == TREE_BIRCH ? uTreeColor * vec3(1.25, 1.2, 0.7) : uTreeColor;
+  float autumn = uTreeLook.y * (0.4 + 0.6 * fract(tr.seed * 0.73)) * float(tr.type != TREE_CONIFER);
   base = mix(base, mix(vec3(0.55, 0.16, 0.03), vec3(0.62, 0.38, 0.04), rnd(h)), autumn);
   return base * (0.7 + 0.6 * rnd(h)) * mix(vec3(1.0), vec3(1.1, 1.05, 0.8), rnd(h) * 0.6);
 }
@@ -2720,8 +2782,9 @@ vec4 treeShade(Tree tr, vec3 ro, vec3 rd, float t0, float t1, float tw, vec3 n, 
   if (tw > 0.0 && tw <= t1 + 1e-3 && T > 0.02) {
     vec3 p = ro + rd * tw;
     float angle = atan(n.z, n.x);
-    float marks = tr.type == 2 ? smoothstep(0.55, 0.75, valueNoise(vec2(angle * 3.0, v * tr.h * 4.0) + tr.seed)) : 0.0;
-    vec3 bark = tr.type == 2 ? mix(vec3(0.6, 0.58, 0.54), vec3(0.06, 0.05, 0.05), marks) : vec3(0.075, 0.06, 0.05) * (0.8 + 0.4 * valueNoise(vec2(angle * 2.0, v * tr.h * 1.5) + tr.seed));
+    bool birch = tr.type == TREE_BIRCH;
+    float marks = birch ? smoothstep(0.55, 0.75, valueNoise(vec2(angle * 3.0, v * tr.h * 4.0) + tr.seed)) : 0.0;
+    vec3 bark = birch ? mix(vec3(0.6, 0.58, 0.54), vec3(0.06, 0.05, 0.05), marks) : vec3(0.075, 0.06, 0.05) * (0.8 + 0.4 * valueNoise(vec2(angle * 2.0, v * tr.h * 1.5) + tr.seed));
     float sun = crownSun(tr, p);
     vec3 c = bark * (gSunE * max(dot(n, L), 0.0) * sun / PI + amb * mix(0.35, 0.8, sun));
     acc += T * c;
@@ -2781,8 +2844,7 @@ float treeShadow(vec3 p) {
 
 // Plain ground: a dark, faintly mottled floor for silhouette scenes.
 vec3 plainGround(vec2 P, float rate) {
-  float S = uSurf.z;
-  return mix(uSurfA.rgb, uSurfB.rgb, nz(vec3(P / (6.0 * S) * 0.1, 0.43), rate / (6.0 * S) * 0.1).r);
+  return mix(uSurfA.rgb, uSurfB.rgb, groundNz(P, 6.0 * uSurf.z, 0.43, rate).r);
 }
 
 // ── Terrain: dunes, snow drifts, rocky ground ──
@@ -2792,23 +2854,22 @@ vec3 plainGround(vec2 P, float rate) {
 float gDunePhase = 0.0;
 
 float terrainH(vec2 p, float rate) {
-  int type = int(uSurf.x);
+  int type = surfType();
   float S = uSurf.z, A = uTerrain.x;
-  vec2 wd = vec2(sin(uSurfC.x), cos(uSurfC.x));
-  vec2 q = vec2(dot(p, wd), dot(p, vec2(wd.y, -wd.x)));
-  if (type == 5) {
+  vec2 q = toFrame(p, dirXZ(uSurfC.x));
+  if (type == SURF_DESERT) {
     float lam = 110.0 * S;
-    vec4 w1 = nz(vec3(q * vec2(1.0, 0.55) / (lam * 4.0) * 0.1, 0.11), rate / (lam * 4.0) * 0.1);
-    vec4 w2 = nz(vec3(q / lam * 0.1, 0.23), rate / lam * 0.1);
+    vec4 w1 = groundNz(q * vec2(1.0, 0.55), lam * 4.0, 0.11, rate);
+    vec4 w2 = groundNz(q, lam, 0.23, rate);
     float f = fract(q.x / lam + (w1.r - 0.5) * 3.2 + (w2.r - 0.5) * 0.5 + gDunePhase);
     float prof = f < 0.78 ? sin(f / 0.78 * PI * 0.5) : 1.0 - pow((f - 0.78) / 0.22, 0.85);
     prof = mix(prof, 0.6, smoothstep(0.08, 0.45, rate / lam));
     float small = (w2.a - 0.5) * 4.0 * (1.0 - smoothstep(0.3, 1.0, rate / (lam * 0.25)));
     return (prof * (0.45 + 0.8 * w1.g) * 13.0 + small) * A * S;
   }
-  vec4 n1 = nz(vec3(p / (60.0 * S) * 0.1, 0.37), rate / (60.0 * S) * 0.1);
-  vec4 n2 = nz(vec3(q * vec2(0.6, 1.0) / (14.0 * S) * 0.1, 0.59), rate / (14.0 * S) * 0.1);
-  if (type == 6) return ((n1.r - 0.5) * 3.0 + (n2.r - 0.5) * 0.9) * A * S;
+  vec4 n1 = groundNz(p, 60.0 * S, 0.37, rate);
+  vec4 n2 = groundNz(q * vec2(0.6, 1.0), 14.0 * S, 0.59, rate);
+  if (type == SURF_SNOW) return ((n1.r - 0.5) * 3.0 + (n2.r - 0.5) * 0.9) * A * S;
   return ((n1.r - 0.5) * 2.4 + (n2.a - 0.5) * 1.6 + pow(n2.g, 3.0) * 1.8) * A * S;
 }
 
@@ -2818,7 +2879,7 @@ float gH0;
 // ground), or -1 if it escapes past the march range.
 float terrainTrace(vec3 d, float fp) {
   float E = uSurf.y, top = 22.0 * uTerrain.x * uSurf.z + 1.0;
-  if (int(uSurf.x) == 5) {
+  if (surfType() == SURF_DESERT) {
     // Stand just upwind of a crest so the view runs out over the dune field.
     float lam = 110.0 * uSurf.z;
     float w1 = nz(vec3(0.0, 0.0, 0.11), 0.0).r, w2 = nz(vec3(0.0, 0.0, 0.23), 0.0).r;
@@ -2864,41 +2925,40 @@ float terrainShadow(vec3 p, float rate) {
 }
 
 vec3 terrainShade(vec3 d, float t, float fp, vec3 amb) {
-  int type = int(uSurf.x);
+  int type = surfType();
   float S = uSurf.z, rate = fp * t * inversesqrt(max(abs(d.y), 0.03));
   vec3 p = d * t;
   vec2 P = p.xz;
   float e = max(0.2, rate);
   float h = terrainH(P, rate);
   vec3 n = normalize(vec3(h - terrainH(P + vec2(e, 0.0), rate), e, h - terrainH(P + vec2(0.0, e), rate)));
-  vec2 wd = vec2(sin(uSurfC.x), cos(uSurfC.x));
-  vec2 q = vec2(dot(P, wd), dot(P, vec2(wd.y, -wd.x)));
+  vec2 wd = dirXZ(uSurfC.x);
+  vec2 q = toFrame(P, wd);
   vec3 A = uSurfA.rgb, B = uSurfB.rgb;
   vec3 alb;
-  float rough = 1.0;
-  if (type == 5) {
+  if (type == SURF_DESERT) {
     // Wind ripples run across the wind; sand shades from crest to trough.
-    float warp = nz(vec3(P / (6.0 * S) * 0.1, 0.81), rate / (6.0 * S) * 0.1).r;
+    float warp = groundNz(P, 6.0 * S, 0.81, rate).r;
     float rw = 0.22 * S, fade = (1.0 - smoothstep(0.15, 0.5, rate / rw)) * uSurfA.a;
     vec2 g = wd * cos((q.x / rw + warp * 7.0) * TAU) * 0.25 * fade;
     n = normalize(n + vec3(-g.x, 0.0, -g.y));
-    alb = mix(B, A, smoothstep(-2.0, 6.0, h / max(uTerrain.x * S, 0.05)) * 0.8 + 0.2 * nz(vec3(P / (25.0 * S) * 0.1, 0.15), rate / (25.0 * S) * 0.1).r);
-  } else if (type == 6) {
+    alb = mix(B, A, smoothstep(-2.0, 6.0, h / max(uTerrain.x * S, 0.05)) * 0.8 + 0.2 * groundNz(P, 25.0 * S, 0.15, rate).r);
+  } else if (type == SURF_SNOW) {
     // Sastrugi: wind-carved ridges along the wind, and glints from individual crystals.
-    vec2 g = noiseGrad(vec3(q * vec2(0.35, 1.0) / (2.0 * S) * 0.1, 0.47), rate / (2.0 * S) * 0.1, 3) * uSurfA.a * 0.045;
-    n = normalize(n + vec3(-(g.x * wd.x + g.y * wd.y), 0.0, -(g.x * wd.y - g.y * wd.x)));
-    alb = mix(A, B, 0.25 * nz(vec3(P / (30.0 * S) * 0.1, 0.61), rate / (30.0 * S) * 0.1).r);
+    vec2 g = fromFrame(groundGrad(q * vec2(0.35, 1.0), 2.0 * S, 0.47, rate, 3) * uSurfA.a * 0.045, wd);
+    n = normalize(n + vec3(-g.x, 0.0, -g.y));
+    alb = mix(A, B, 0.25 * groundNz(P, 30.0 * S, 0.61, rate).r);
   } else {
-    float n1 = nz(vec3(P / (8.0 * S) * 0.1, 0.27), rate / (8.0 * S) * 0.1).r;
-    float crack = pow(1.0 - abs(nz(vec3(P / (3.0 * S) * 0.1, 0.39), rate / (3.0 * S) * 0.1).a * 2.0 - 1.0), 10.0);
+    float n1 = groundNz(P, 8.0 * S, 0.27, rate).r;
+    float crack = pow(1.0 - abs(groundNz(P, 3.0 * S, 0.39, rate).a * 2.0 - 1.0), 10.0);
     alb = mix(A, B, smoothstep(0.3, 0.7, n1)) * (1.0 - 0.45 * crack * (1.0 - smoothstep(0.05, 0.3, rate / (3.0 * S))));
-    vec2 g = noiseGrad(vec3(P / (1.5 * S) * 0.1, 0.91), rate / (1.5 * S) * 0.1, 0) * 0.04 * uSurfA.a;
+    vec2 g = groundGrad(P, 1.5 * S, 0.91, rate, 0) * 0.04 * uSurfA.a;
     n = normalize(n + vec3(-g.x, 0.0, -g.y));
   }
   float sh = terrainShadow(p + n * (0.3 + 2.0 * rate), rate) * gShade;
   vec3 col = alb * (gSunE * max(dot(n, uSunDir), 0.0) * sh / PI + amb * (0.55 + 0.45 * n.y));
   if (uMoonScale > 0.0) col += alb * gMoonE * max(dot(n, uMoonDir), 0.0) / PI;
-  if (type == 6 && uSurfC.y > 0.0) {
+  if (type == SURF_SNOW && uSurfC.y > 0.0) {
     // Sparkle: one crystal facet per footprint, facing any way at all, flashes where it mirrors
     // the sun or moon into the eye, whichever side the light is on.
     uint hh = hash3u(uvec3(uvec2(ivec2(floor(P / (rate * 2.0))) + 1000000), 7u));
@@ -2916,15 +2976,15 @@ vec3 terrainShade(vec3 d, float t, float fp, vec3 amb) {
 
 vec3 aurora(vec3 d, float fp, float jitter) {
   if (uAurora.x <= 0.0 || d.y <= 0.0) return vec3(0.0);
-  vec2 hd = vec2(sin(uAurora.z), cos(uAurora.z));
+  vec2 hd = dirXZ(uAurora.z);
   float time = uTime.z, base = mix(1100.0, -150.0, uAurora.w);
   vec3 acc = vec3(0.0);
   const int N = 28;
   for (int k = 0; k < N; k++) {
     float hf = (float(k) + jitter) / float(N);
     float t = shellDist(OBS * d.y, RG + 95.0 + 190.0 * uAurora.y * hf);
-    vec2 xz = d.xz * t;
-    float along = dot(xz, vec2(hd.y, -hd.x)), across = dot(xz, hd);
+    vec2 xz = toFrame(d.xz * t, hd);
+    float across = xz.x, along = xz.y;
     float rate = fp * t * 0.001;
     // Curtains meander at three scales; a few run side by side.
     float fold = (nz(vec3(along * 0.0006, time * 0.0015, 0.37), rate * 0.6).a - 0.5) * 420.0
@@ -3160,6 +3220,9 @@ ${GLSL_NOISE}
 ${GLSL_STAR}
 ${GLSL_NIGHT}
 
+// Image position relative to the centre, in half-diagonals.
+vec2 imgNorm(vec2 img) { return (img - 0.5 * uImg) / (0.5 * length(uImg)); }
+
 vec3 viewDir(vec2 img, out float valid) {
   valid = 1.0;
   if (uProj == 3) {
@@ -3169,7 +3232,7 @@ vec3 viewDir(vec2 img, out float valid) {
     lat = clamp(lat, -0.5 * PI, 0.5 * PI);
     return vec3(sin(lon) * cos(lat), sin(lat), cos(lon) * cos(lat));
   }
-  vec2 n = (img - 0.5 * uImg) / (0.5 * length(uImg));
+  vec2 n = imgNorm(img);
   n.y = -n.y;
   if (uProj == 0) {
     vec2 s = n * tan(uHalfDiag);
@@ -3225,8 +3288,7 @@ vec3 sunLight(vec3 d, float fp) {
   vec3 T = transmittance(OBS, d.y);
   float q = ang / r;
   float limb = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - q * q)));
-  float cover = clamp((r - ang) / max(fp, 1e-7) + 0.5, 0.0, 1.0);
-  vec3 c = T * cover * limb / (PI * SUN_R * SUN_R);
+  vec3 c = T * diskCover(r, ang, fp) * limb / (PI * SUN_R * SUN_R);
   c += transmittance(OBS, uSunDir.y) * uSunDisk.z * (6.0 * exp(-ang / (0.01 * r / SUN_R)) + 0.5 * exp(-ang / 0.06) + 0.05 * exp(-ang / 0.3));
   return c * (uSunScale * uSunDisk.x);
 }
@@ -3258,18 +3320,18 @@ vec3 skyAbove(vec3 d, float fp, float jitter, vec3 amb) {
 
 vec3 viewRadiance(vec3 ro, vec3 d, float fp, float jitter, vec3 amb) {
   vec3 beacon = vec3(0.0);
-  if (F_LAND && (uLand.x > 0.5 || uPeak.x > 0.0) && d.y < 0.5 && !gNoLand && !DBG(DBG_LAND)) {
+  if (F_LAND && (landType() != LAND_NONE || uPeak.x > 0.0) && d.y < 0.5 && !gNoLand && !DBG(DBG_LAND)) {
     vec3 n = vec3(0.0, 1.0, 0.0);
     gBeacon = 0.0;
     // The city first; where it misses, or with hills, mountains or forest, the land and volcano.
-    bool city = F_CITY && uLand.x > 3.5;
+    bool city = F_CITY && landType() == LAND_CITY;
     float t = city ? CITY_TRACE(ro, d, fp, n) : -1.0;
     if (t < 0.0 && (!city || uPeak.x > 0.0)) { city = false; t = LAND_TRACE(ro, d, fp); }
     beacon = vec3(1.0, 0.07, 0.03) * gBeacon * 6.0 * uNightScale * uLandB.w;
     if (t > 0.0) {
       vec3 c = city ? CITY_SHADE(ro, d, t, n, fp, amb) : LAND_SHADE(ro, d, t, fp, amb);
       // Aerial perspective: Rayleigh-blue extinction plus haze over the distance, then fog.
-      vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / mix(150.0, 4.0, uHaze)));
+      vec3 tr = exp(-t * 0.001 * (vec3(0.0058, 0.0135, 0.0331) + 1.0 / hazeKm()));
       return beacon + applyFog(c * tr + horizonSky(d) * (1.0 - tr), d, t, amb);
     }
   }
@@ -3283,22 +3345,22 @@ vec3 sceneColor(vec3 d, float fp, float jitter) {
   vec3 amb = skyAmbient();
   gSunE = uSunScale * transmittance(OBS, uSunDir.y);
   gMoonE = uMoonScale * transmittance(OBS, max(uMoonDir.y, 0.0));
-  int type = int(uSurf.x);
-  bool grassy = F_GRASS && (type == 3 || type == 4), water = F_WATER && (type == 1 || type == 2);
+  int type = surfType();
+  bool grassy = F_GRASS && (type == SURF_GRASS || type == SURF_WHEAT), water = F_WATER && (type == SURF_WATER || type == SURF_SALT);
   if (DBG(DBG_WATER)) water = false; // plain ground instead: no surface, no reflection pass
-  float E = uSurf.y, H = uGrass.x;
-  bool terrain = F_TERRAIN && type >= 5;
+  float E = uSurf.y, H = uGrass.x, hTop = 1.3 * H; // the blades are traced below hTop
+  bool terrain = F_TERRAIN && type >= SURF_DESERT;
   float Dm = d.y < 0.0 ? E / -d.y : 1e9;
   if (terrain) {
     float tt = TERRAIN_TRACE(d, fp);
     // Rays that outrun the march below the horizon meet the far, flattened dune sea.
     Dm = tt > 0.0 ? tt : d.y < 0.0 ? max((E + gH0) / -d.y, 6000.0) : -1.0;
   }
-  bool ground = (terrain ? Dm > 0.0 : d.y < 0.0) && (uLand.x < 0.5 || Dm < landNear());
+  bool ground = (terrain ? Dm > 0.0 : d.y < 0.0) && (landType() == LAND_NONE || Dm < landNear());
   if (!ground) Dm = 1e9;
   float rate = fp * Dm * inversesqrt(max(-d.y, 0.02));
   if (grassy) GRASS_SETUP();
-  float tTop = d.y < 0.0 && E > 1.3 * H ? (E - 1.3 * H) / -d.y : 0.0;
+  float tTop = d.y < 0.0 && E > hTop ? (E - hTop) / -d.y : 0.0;
   if (F_TREES && uTreeN > 0 && ground) {
     float tm = grassy ? mix(tTop, Dm, 0.5) : Dm;
     gShade = TREE_SHADOW(vec3(d.x * tm, -E, d.z * tm));
@@ -3310,10 +3372,10 @@ vec3 sceneColor(vec3 d, float fp, float jitter) {
     float tTree = 1e9;
     vec4 tree = F_TREES && uTreeN > 0 ? TREES_TRACE(ro, rd, hit ? Dm : 1e9, fp, jitter, amb, tTree) : vec4(0.0);
     // Grass blades in front of everything else, including from inside the canopy.
-    bool inGrass = pass == 0 && grassy && (ground || E < 1.3 * H);
+    bool inGrass = pass == 0 && grassy && (ground || E < hTop);
     float tEnd = tTop, t1 = 0.0, tRes = 0.0;
     if (inGrass) {
-      t1 = ground ? Dm : (d.y > 1e-4 ? (1.3 * H - E) / d.y : 1e4);
+      t1 = ground ? Dm : (d.y > 1e-4 ? (hTop - E) / d.y : 1e4);
       tRes = min(uGrass.z * 10.0, 0.8 * gCell.y) / (0.75 * fp) * (0.75 + 0.5 * jitter);
       if (tTop < min(tRes, tTree)) {
         vec4 g = GRASS_TRACE(d, tTop, min(min(t1, tRes), tTree), tRes, fp, amb, tEnd);
@@ -3452,8 +3514,7 @@ vec3 grade(vec3 lin, vec2 img) {
   c = mix(c, softLight(c, uHighTint.rgb), uHighTint.a * l * l);
   c = mix(c, c * uFilter.rgb / max(luma(uFilter.rgb), 0.05), uFilter.a);
   c = c + uLift * (1.0 - c);
-  vec2 n = (img - 0.5 * uImg) / (0.5 * length(uImg));
-  c *= 1.0 - uLens.x * smoothstep(0.3, 1.15, length(n));
+  c *= 1.0 - uLens.x * smoothstep(0.3, 1.15, length(imgNorm(img)));
   return clamp(c, 0.0, 1.0);
 }
 
