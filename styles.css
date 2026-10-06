@@ -17,19 +17,21 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 html, body {
-  height: 100%; background: var(--void); color: var(--ink); overflow: hidden; overscroll-behavior: none;
+  height: 100%; background: var(--void); color: var(--ink); overscroll-behavior: none;
   font: 11px/1.4 ui-sans-serif, -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 /* Touch: no double-tap zoom, no grey tap flash, no text inflation in landscape, no long-press
    selection on the controls (fields stay selectable). */
-html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+html { overflow: hidden; touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
 #panel, #bar, #credit, #reopen, .modal { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 input, select { -webkit-user-select: text; user-select: text; }
 button { font: inherit; color: inherit; }
-/* A plain background colour: iOS Safari tints its toolbars from the fixed layer at each edge and
-   would otherwise sample the canvas once and keep that colour. */
-#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; background: var(--void); -webkit-touch-callout: none; }
+/* Page content, not a fixed layer: iOS 26 Safari clips fixed layers to the strip between its status
+   bar and toolbar and paints both bars flat, but runs the page on under them. The large viewport
+   height reaches down behind the toolbar; elsewhere it is the window. Nothing scrolls: the root
+   hides its overflow and the canvas takes every touch. */
+#view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; height: 100lvh; display: block; touch-action: none; cursor: grab; background: var(--void); -webkit-touch-callout: none; }
 #view.drag { cursor: grabbing; }
 #view.place { cursor: crosshair; }
 
@@ -221,9 +223,10 @@ select option { background: #111; }
 
 @media (max-width: 700px) {
   /* Phones: the whole sheet scrolls as one; Reset and Capture stay pinned to its bottom edge. */
-  #panel { left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); top: auto; bottom: calc(8px + var(--sab)); width: auto; height: 48%; display: block; overflow-y: auto; overscroll-behavior: contain; }
+  /* 12px up: Safari tints its toolbar from a fixed or sticky layer within ~10px of the edge. */
+  #panel { left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); top: auto; bottom: calc(12px + var(--sab)); width: auto; height: 48%; display: block; overflow-y: auto; overscroll-behavior: contain; }
   .tabbody { overflow: visible; }
-  .foot { position: sticky; bottom: 0; background: rgba(9, 10, 15, .97); }
+  .foot { position: sticky; bottom: 0; z-index: 1; background: rgb(9, 10, 15); }
   #credit { top: calc(60px + var(--sat)); left: 50%; bottom: auto; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; font-size: 8px; letter-spacing: .01em; white-space: nowrap; }
   #credit svg { width: 9px; height: 9px; }
   #credit .gh { display: none; }

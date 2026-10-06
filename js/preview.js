@@ -207,7 +207,7 @@ function invalidate() {
 function viewMapping(cw) {
   const k = cw / canvas.clientWidth;
   const [W, H] = captureDims();
-  return { pix0: [-F.x * W / F.w, -F.y * H / F.h], step: W / (F.w * k) };
+  return { pix0: [-(F.x + F.ox) * W / F.w, -(F.y + F.oy) * H / F.h], step: W / (F.w * k) };
 }
 
 function resizeCanvas() {
