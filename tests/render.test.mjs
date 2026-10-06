@@ -12,19 +12,9 @@
 // GPU behaviour cannot be reproduced here, so a pass is necessary rather than sufficient: it shows
 // the app's own logic is sound and catches regressions that also show up on SwiftShader.
 
-import { createRequire } from 'module';
-import http from 'http';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { toRGB, findBlockAnomalies, corruptCells, cellContrast, cellBusyness } from './block-detector.mjs';
+import { launch, serveApp, check, assert, harnessFailed, finish } from './harness.mjs';
 
-const require = createRequire(process.env.PLAYWRIGHT_MODULES || '/opt/node-tools/node_modules/');
-const { chromium } = require('playwright');
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CHROMIUM = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
-const ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-proxy-server'];
 const argv = process.argv.slice(2);
 const FULL = argv.includes('--full');
 const URL_ARG = argv.find(a => !a.startsWith('--'));
@@ -38,46 +28,13 @@ const REFINE = 12;
 const HEAVY = ['Ember Dusk', 'Aurora Lake', 'Ocean Glitter']; // clouds + water, night + aurora, sun glitter
 const COMPARE = ['Fuji Twilight', 'Ember Dusk', 'Golden Fields', 'High Noon', 'Alpine Lake', 'Ocean Glitter'];
 
-// ─── Tiny runner ────────────────────────────────────────────────────────────
+// ─── Page helpers ───────────────────────────────────────────────────────────
 
-const results = [];
-async function check(name, fn) {
-  const t0 = Date.now();
-  try {
-    const note = await fn();
-    results.push({ name, ok: true });
-    console.log(`PASS  ${name} (${((Date.now() - t0) / 1000).toFixed(1)}s)${note ? '\n      ' + note : ''}`);
-  } catch (e) {
-    results.push({ name, ok: false });
-    console.log(`FAIL  ${name} (${((Date.now() - t0) / 1000).toFixed(1)}s)\n      ${String(e && e.message || e).split('\n').join('\n      ')}`);
-  }
-}
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
-
-// ─── Server and browser ─────────────────────────────────────────────────────
-
-function serve() {
-  const server = http.createServer((req, res) => {
-    const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
-    const file = path.resolve(ROOT, rel);
-    if (!file.startsWith(ROOT + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-      res.statusCode = rel === 'favicon.ico' ? 204 : 404;
-      return res.end();
-    }
-    const type = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }[path.extname(file)];
-    if (type) res.setHeader('content-type', type);
-    fs.createReadStream(file).pipe(res);
-  });
-  return new Promise(r => server.listen(0, '127.0.0.1', () => r(server)));
-}
-
-// Helpers installed in the page. They call the app's own top-level functions (applyLook,
-// refineView, renderThumb, ...) and read pixels back as base64 so Node can analyse them.
+// Installed in the page. They call the app's own top-level functions (applyLook, refineView,
+// renderThumb, ...) and read pixels back as base64 so Node can analyse them.
 function installHelpers() {
   job = { cancel: false }; // the app's frame loop renders nothing while an export job is set
+  GPU.px = GPU.avg = FRAME_PX; // bands of the documented size, whatever the frame loop's pacing reached
   const b64 = a => {
     const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
     let s = '';
@@ -89,12 +46,20 @@ function installHelpers() {
     if (i < 0) throw new Error(`no preset named ${name}`);
     return i;
   };
+  // Pixels of a framebuffer (null: the canvas), as the sum of its passes or RGBA8 bytes.
   const readFloat = (fbo, w, h) => {
     const f = new Float32Array(w * h * 4);
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, f);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return f;
+  };
+  const readBytes = (fbo, w, h) => {
+    const px = new Uint8Array(w * h * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return px;
   };
   window.__t = {
     names: () => PRESETS.map(p => p.name),
@@ -132,26 +97,74 @@ function installHelpers() {
       cv.width = w;
       cv.height = h;
       renderThumb(PRESETS[i], cv);
-      const raw = new Uint8Array(w * h * 4);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, thumbTarget.fbo);
-      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, raw);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      const raw = readBytes(thumbTarget.fbo, w, h);
       const shown = cv.getContext('2d').getImageData(0, 0, w, h).data;
       return { data: b64(raw), shown: b64(shown), glError: gl.getError() };
     },
+    // Reprojection: renders n passes of preset i at camera cam0, moves the camera by `move`, and
+    // presents the kept view reprojected over a 1×1 black, then white, stand-in for the low-
+    // resolution preview (pixels equal in both are the kept view alone). Returns those, the unmoved
+    // view as shown, and a fresh n-pass render at the moved camera; RGBA8 rows bottom-up, the fresh
+    // one as float.
+    warp(i, w, h, n, cam0, move) {
+      const readCanvas = () => readBytes(null, w, h);
+      const passes = () => { for (let k = 0; k < n; k++) while (!refineView(k)); };
+      canvas.width = w;
+      canvas.height = h;
+      applyLook(PRESETS[i]);
+      Object.assign(P, cam0);
+      invalidate();
+      anchor = null;
+      passes();
+      const before = readCanvas();
+      Object.assign(P, move);
+      invalidate();
+      const over = v => {
+        lowTarget = fitTarget(lowTarget, 1, 1);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, lowTarget.fbo);
+        gl.clearColor(v, v, v, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        lowOK = true;
+        present();
+        return readCanvas();
+      };
+      const black = over(0), white = over(1);
+      passes();
+      const fresh = readFloat(accTarget.fbo, w, h);
+      return { before: b64(before), black: b64(black), white: b64(white), fresh: b64(fresh), glError: gl.getError() };
+    },
+    // Mean light the stars add (luminance, stars on minus off, after grading) over a w×h window of a
+    // 1920×1080 image of preset `name` at the given field of view, the window's top-left at (ox, oy).
+    starlight(name, fov, w, h, ox, oy) {
+      const W = 1920, H = 1080, look = PRESETS[presetIndex(name)];
+      const mean = on => {
+        Object.assign(P, lookParams(look), { fov, stars: on, vignette: 0, grain: 0 });
+        const values = sceneValues([W, H]), t = target(w, h, gl.RGBA16F);
+        for (let k = 0; k < 2; k++) {
+          if (k) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
+          drawSky(t.fbo, w, h, [ox, oy], 1, values, { frame: k });
+          gl.disable(gl.BLEND);
+        }
+        const f = readFloat(t.fbo, w, h);
+        t.free();
+        let s = 0;
+        for (let i = 0; i < w * h; i++) s += 0.2126 * f[i * 4] + 0.7152 * f[i * 4 + 1] + 0.0722 * f[i * 4 + 2];
+        return s / (2 * w * h);
+      };
+      return mean(true) - mean(false);
+    },
     // Frames the main view so the canvas shows exactly the whole capture image, as a thumbnail
-    // does, and renders one sample per pixel (pass 0) at the thumbnail's ray-step quality (read
-    // from renderThumb's source, which passes { quality: 0.8 }). Restores the framing afterwards.
+    // does, and renders one sample per pixel (pass 0) at the thumbnail's ray-step quality.
+    // Restores the framing afterwards.
     fittedPass0(i, w, h) {
       const savedF = { ...F }, savedRatio = C.ratio;
-      const thumbQuality = +((renderThumb.toString().match(/quality:\s*([\d.]+)/) || [])[1] || 1);
       try {
         canvas.width = w;
         canvas.height = h;
         C.ratio = w / h;
         Object.assign(F, { x: 0, y: 0, w: canvas.clientWidth, h: canvas.clientHeight });
         applyLook(PRESETS[i]);
-        P.cQuality *= thumbQuality;
+        P.cQuality *= THUMB_QUALITY;
         while (!refineView(0));
         return { data: b64(readFloat(accTarget.fbo, w, h)), dims: captureDims(), glError: gl.getError() };
       } finally {
@@ -164,6 +177,14 @@ function installHelpers() {
 
 const f32 = b64 => { const b = Buffer.from(b64, 'base64'); return new Float32Array(b.buffer, b.byteOffset, b.length / 4); };
 const u8 = b64 => new Uint8Array(Buffer.from(b64, 'base64'));
+
+// Float values of `a` and `b` whose bit patterns differ: how many, and the index of the first.
+function bitDiff(a, b) {
+  const ua = new Uint32Array(a.slice().buffer), ub = new Uint32Array(b.slice().buffer);
+  let n = 0, first = -1;
+  for (let i = 0; i < ua.length; i++) if (ua[i] !== ub[i]) { if (!n) first = i; n++; }
+  return { n, first };
+}
 
 async function openPage(browser, url, contextOptions, log) {
   const context = await browser.newContext({ viewport: { width: 800, height: 500 }, ...contextOptions });
@@ -195,6 +216,15 @@ function coverageErrors(f, w, n) {
     }
   }
   return bad;
+}
+
+// What is wrong with an n-pass accumulation `f` of width w that __t.accumulate returned as `r`.
+function accumulationProblems(name, r, f, w, n) {
+  const problems = [], nf = nonFinite(f), cov = coverageErrors(f, w, n);
+  if (nf) problems.push(`${name}: ${nf} non-finite values`);
+  if (cov.length) problems.push(`${name}: coverage ${cov.join(', ')}`);
+  if (r.glError) problems.push(`${name}: gl error 0x${r.glError.toString(16)}`);
+  return problems;
 }
 
 function anomalies(rgb, w, h) {
@@ -252,8 +282,7 @@ function syntheticImage(w, h) {
 
 // ─── Checks ─────────────────────────────────────────────────────────────────
 
-const t0 = Date.now();
-let server = null, browser = null;
+let app = null, browser = null;
 try {
   await check('block detector self-check (synthetic image)', () => {
     const [w, h] = MAIN, rgb = syntheticImage(w, h);
@@ -262,10 +291,9 @@ try {
     return selfCheck(rgb, w, h, 'synthetic', 12345);
   });
 
-  let url = URL_ARG;
-  if (!url) { server = await serve(); url = `http://127.0.0.1:${server.address().port}/index.html`; }
-  browser = await chromium.launch({ executablePath: CHROMIUM, headless: true, args: ARGS });
-  const log = [];
+  app = await serveApp(URL_ARG);
+  browser = await launch();
+  const { url } = app, log = [];
   let page = null;
 
   await check('page loads without shader or page errors', async () => {
@@ -290,10 +318,7 @@ try {
       const r = await page.evaluate(([i, w, h]) => __t.accumulate(i, w, h, 2), [i, ...SMALL]);
       const f = f32(r.data);
       small[names[i]] = f;
-      const nf = nonFinite(f), cov = coverageErrors(f, SMALL[0], 2);
-      if (nf) problems.push(`${names[i]}: ${nf} non-finite values`);
-      if (cov.length) problems.push(`${names[i]}: coverage ${cov.join(', ')}`);
-      if (r.glError) problems.push(`${names[i]}: gl error 0x${r.glError.toString(16)}`);
+      problems.push(...accumulationProblems(names[i], r, f, SMALL[0], 2));
     }
     assert(!problems.length, problems.slice(0, 12).join('\n') + (problems.length > 12 ? `\n... ${problems.length - 12} more` : ''));
   });
@@ -307,10 +332,7 @@ try {
       const r = await page.evaluate(([n, w, h, k]) => __t.accumulate(__t.presetIndex(n), w, h, k), [name, ...MAIN, REFINE]);
       const f = f32(r.data);
       main[name] = f;
-      const nf = nonFinite(f), cov = coverageErrors(f, MAIN[0], REFINE);
-      if (nf) problems.push(`${name}: ${nf} non-finite values`);
-      if (cov.length) problems.push(`${name}: coverage ${cov.join(', ')}`);
-      if (r.glError) problems.push(`${name}: gl error 0x${r.glError.toString(16)}`);
+      problems.push(...accumulationProblems(name, r, f, MAIN[0], REFINE));
     }
     assert(!problems.length, problems.join('\n'));
     return heavy.join(', ');
@@ -372,9 +394,7 @@ try {
     const a = await run(), ta = await thumb();
     await page.evaluate(([n, w, h]) => __t.accumulate(__t.presetIndex(n), w, h, 1), [other, ...SMALL]); // disturb state in between
     const b = await run(), tb = await thumb();
-    const fa = new Uint32Array(f32(a.data).slice().buffer), fb = new Uint32Array(f32(b.data).slice().buffer);
-    let diff = 0;
-    for (let i = 0; i < fa.length; i++) diff += fa[i] !== fb[i];
+    const fa = f32(a.data), diff = bitDiff(fa, f32(b.data)).n;
     assert(diff === 0, `${name}: ${diff} of ${fa.length} accumulation values differ between two identical renders`);
     assert(Buffer.from(ta.data, 'base64').equals(Buffer.from(tb.data, 'base64')), `${name}: thumbnails differ between two identical renders`);
     return `${name}, 3 passes at ${SMALL.join('×')} + thumbnail, with ${other} rendered in between`;
@@ -391,9 +411,7 @@ try {
         try { return __t.accumulate(i, w, h, 1); } finally { sceneFeatures = own; }
       }, [i, ...SMALL, full]);
       const a = await run(false), b = await run(true);
-      const fa = new Uint32Array(f32(a.data).slice().buffer), fb = new Uint32Array(f32(b.data).slice().buffer);
-      let diff = 0;
-      for (let j = 0; j < fa.length; j++) diff += fa[j] !== fb[j];
+      const diff = bitDiff(f32(a.data), f32(b.data)).n;
       if (diff) bad.push(`${names[i]}: ${diff} values`);
     }
     assert(!bad.length, `trimmed and full shaders differ: ${bad.join(', ')}`);
@@ -482,10 +500,8 @@ try {
       assert(!nf, `${nf} non-finite values`);
       assert(!cov.length, `coverage: ${cov.join(', ')}`);
       const ref = f32((await phone.evaluate(([w, h, n]) => __t.unbanded(w, h, n), [w, h, n])).data);
-      const ua = new Uint32Array(f.slice().buffer), ub = new Uint32Array(ref.slice().buffer);
-      let diff = 0, firstRow = -1;
-      for (let i = 0; i < ua.length; i++) if (ua[i] !== ub[i]) { diff++; if (firstRow < 0) firstRow = Math.floor(i / 4 / w); }
-      assert(diff === 0, `${diff} values differ from the unbanded render (first at row ${firstRow})`);
+      const diff = bitDiff(f, ref);
+      assert(diff.n === 0, `${diff.n} values differ from the unbanded render (first at row ${Math.floor(diff.first / 4 / w)})`);
       const a = anomalies(toRGB(f, w, h, 1 / n), w, h);
       assert(!a.length, describe(a));
       assert(!plog.length, plog.join('\n'));
@@ -495,19 +511,82 @@ try {
     }
   });
 
+  // While a camera move renders, the view shows the last finished one reprojected. Its inverse
+  // projections must land each direction where the fresh render puts it: much closer than the
+  // unmoved image, for every projection. Compared in 4×4-block means, since resampling alone
+  // moves fine detail (ripples, the horizon line) by a level or two.
+  await check('reprojection: the kept view, moved with the camera, matches a fresh render (4 projections)', async () => {
+    const problems = [], notes = [];
+    const [w, h] = MAIN, n = 4, B = 4;
+    const cases = [
+      ['Lens', { proj: 0, fov: 70 }, { heading: '+5', pitch: '+3', roll: '+4' }],
+      ['Fisheye', { proj: 1, fov: 150 }, { heading: '+12', pitch: '+6' }],
+      ['Dome', { proj: 2, fov: 160 }, { heading: '+12', pitch: '-6', fov: '-25' }],
+      ['360°', { proj: 3, fov: 360 }, { heading: '+30' }],
+    ];
+    const name = names.includes('Fuji Twilight') ? 'Fuji Twilight' : names[0];
+    for (const [label, cam0, rel] of cases) {
+      const r = await page.evaluate(([n0, w, h, n, cam0, rel]) => {
+        const i = __t.presetIndex(n0), base = { ...lookParams(PRESETS[i]), ...cam0 };
+        const move = Object.fromEntries(Object.entries(rel).map(([k, d]) => [k, base[k] + +d]));
+        return __t.warp(i, w, h, n, cam0, move);
+      }, [name, w, h, n, cam0, rel]);
+      const before = u8(r.before), black = u8(r.black), white = u8(r.white), fresh = f32(r.fresh);
+      const kept = p => black[p * 4] === white[p * 4] && black[p * 4 + 1] === white[p * 4 + 1] && black[p * 4 + 2] === white[p * 4 + 2];
+      let covered = 0, blocks = 0, ew = 0, es = 0;
+      for (let p = 0; p < w * h; p++) covered += kept(p);
+      for (let by = 0; by < h / B; by++) for (let bx = 0; bx < w / B; bx++) {
+        const px = [];
+        for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) px.push((by * B + y) * w + bx * B + x);
+        if (!px.every(kept)) continue;
+        blocks++;
+        for (let c = 0; c < 3; c++) {
+          let a = 0, b = 0, f = 0;
+          for (const p of px) { a += black[p * 4 + c]; b += before[p * 4 + c]; f += Math.min(255, Math.max(0, fresh[p * 4 + c] / n * 255)); }
+          ew += Math.abs(a - f) / px.length;
+          es += Math.abs(b - f) / px.length;
+        }
+      }
+      ew /= 3 * blocks || 1;
+      es /= 3 * blocks || 1;
+      const cov = covered / (w * h);
+      notes.push(`${label}: covers ${(cov * 100).toFixed(0)}%, error ${ew.toFixed(2)} vs unmoved ${es.toFixed(2)} levels`);
+      if (r.glError) problems.push(`${label}: gl error 0x${r.glError.toString(16)}`);
+      if (cov < 0.5) problems.push(`${label}: the kept view covers only ${(cov * 100).toFixed(0)}% after a small move`);
+      if (!(ew < 0.3 * es)) problems.push(`${label}: reprojected error ${ew.toFixed(2)} is not well below the unmoved ${es.toFixed(2)}`);
+      if (!(ew < 2.5)) problems.push(`${label}: reprojected error ${ew.toFixed(2)} levels > 2.5`);
+    }
+    assert(!problems.length, problems.join('\n') + '\n' + notes.join('\n'));
+    return `${name}: ` + notes.join('\n      ');
+  });
+
+  // A star's light is fixed on the sky: zooming spreads or gathers it, so the level the stars add holds
+  // across zoom, and from the centre to the stretched corner of a wide frame. (Before, it grew with
+  // the field of view squared and followed the local pixel scale: 15× from 40° to 120°, 5× toward the
+  // corner.)
+  await check('stars: their light holds across zoom and across a wide frame', async () => {
+    const name = names.includes('Deep Navy') ? 'Deep Navy' : names[0], [w, h] = [320, 200];
+    const at = (fov, ox, oy) => page.evaluate(a => __t.starlight(...a), [name, fov, w, h, ox, oy]);
+    const centre = [960 - w / 2, 540 - h / 2], zoom = {};
+    for (const fov of [40, 70, 120]) zoom[fov] = await at(fov, ...centre);
+    const corner = await at(110, 0, 0), middle = await at(110, ...centre);
+    const levels = Object.values(zoom), spread = Math.max(...levels) / Math.min(...levels), edge = corner / middle;
+    const note = `${name}: ${Object.entries(zoom).map(([f, v]) => `${f}° ${v.toFixed(4)}`).join(', ')} (×${spread.toFixed(2)}); 110° corner/centre ${edge.toFixed(2)}`;
+    assert(levels.every(v => v > 0), `no starlight: ${note}`);
+    assert(spread < 1.6, `starlight changes ×${spread.toFixed(2)} with zoom\n${note}`);
+    assert(edge > 0.7 && edge < 1.4, `corner/centre starlight ${edge.toFixed(2)}\n${note}`);
+    return note;
+  });
+
   await check('no errors logged during the run', async () => {
     const st = await page.evaluate(() => __t.state());
     assert(!st.err && !st.lost && st.glError === 0, `err=${st.err.slice(0, 200)} lost=${st.lost} glError=${st.glError}`);
     assert(!log.length, log.join('\n'));
   });
 } catch (e) {
-  results.push({ name: 'harness', ok: false });
-  console.log(`FAIL  harness\n      ${e && e.stack || e}`);
+  harnessFailed(e);
 } finally {
   if (browser) await browser.close();
-  if (server) server.close();
+  if (app) app.close();
 }
-
-const failed = results.filter(r => !r.ok);
-console.log(`\n${results.length - failed.length}/${results.length} checks passed in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
-process.exit(failed.length ? 1 : 0);
+finish();
