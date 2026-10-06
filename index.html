@@ -80,14 +80,15 @@ button { font: inherit; color: inherit; }
 .icon:hover { color: var(--ink); background: var(--line); }
 .presets { display: flex; gap: 8px; overflow-x: auto; padding: 2px 14px 12px; flex: none; }
 .preset { flex: none; width: 70px; text-align: left; font-size: 10px; position: relative; }
-.preset canvas { width: 70px; height: 44px; border-radius: 7px; border: 1px solid var(--faint); display: block; margin-bottom: 4px; background: #000; }
+.preset canvas, .preset.add .plus { width: 70px; height: 44px; border-radius: 7px; margin-bottom: 4px; }
+.preset canvas { border: 1px solid var(--faint); display: block; background: #000; }
 .preset:hover canvas { border-color: var(--dim); }
 .preset.active { color: var(--ink); }
 .preset.active canvas { border-color: var(--ink); }
 .preset .x { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: rgba(0, 0, 0, .65); color: var(--ink); display: none; place-items: center; cursor: pointer; font-size: 10px; }
 .preset .x.armed { background: #b8322c; }
 .preset:hover .x, .preset .x.armed { display: grid; }
-.preset.add .plus { width: 70px; height: 44px; border-radius: 7px; border: 1px dashed var(--faint); display: grid; place-items: center; margin-bottom: 4px; font-size: 16px; color: var(--dim); }
+.preset.add .plus { border: 1px dashed var(--faint); display: grid; place-items: center; font-size: 16px; color: var(--dim); }
 .preset.add:hover .plus { border-color: var(--dim); color: var(--ink); }
 .saverow { display: flex; gap: 6px; padding: 0 14px 12px; flex: none; }
 .saverow .num { margin: 0; text-align: left; font-family: inherit; flex: 1; }
@@ -459,8 +460,13 @@ function hexLinear(hex) {
   return hexSRGB(hex).map(c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 }
 
+// Rec. 709 luminance of a linear colour.
+function luma(r, g, b) {
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 function saturate(rgb, amount) {
-  const l = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+  const l = luma(...rgb);
   return rgb.map(c => Math.max(0, l + (c - l) * (1 + amount)));
 }
 
@@ -487,7 +493,7 @@ function sunPhase(elev) {
 function whiteBalance() {
   const t = P.temp, g = P.tint;
   const wb = [1 + 0.32 * t, 1 - 0.12 * g, 1 - 0.32 * t];
-  const l = 0.2126 * wb[0] + 0.7152 * wb[1] + 0.0722 * wb[2];
+  const l = luma(...wb);
   return wb.map(c => c / l);
 }
 
@@ -672,8 +678,8 @@ function lookActive(look) {
 function applyLook(look) {
   setPlaying(false);
   Object.assign(P, lookParams(look));
-  Object.assign(ANIM, { time: 0, micro: 0, elapsed: 0, origin: null, cloud: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] });
-  cloudSel = [0, 1, 2].find(i => P[`c${i}On`]) ?? 0;
+  rewindAnim();
+  cloudSel = firstCloudLayer();
   changed();
 }
 
@@ -692,14 +698,15 @@ function deleteLook(look) {
 let thumbTarget = null;
 const thumbQueue = []; // [look, canvas, cache key] still to draw
 const THUMB_SAMPLES = 4; // a single sample per pixel leaves thumbnail edges jagged
+const THUMB_QUALITY = 0.8; // ray steps, relative to the view
 
 function renderThumb(look, cv) {
   const savedP = JSON.stringify(P), savedCloud = ANIM.cloud;
   Object.assign(P, lookParams(look));
-  ANIM.cloud = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  ANIM.cloud = cloudsAtRest();
   const w = cv.width, h = cv.height;
   thumbTarget = fitTarget(thumbTarget, w, h);
-  drawSky(thumbTarget.fbo, w, h, [0, 0], 1, sceneValues([w, h]), { quality: 0.8, samples: THUMB_SAMPLES });
+  drawSky(thumbTarget.fbo, w, h, [0, 0], 1, sceneValues([w, h]), { quality: THUMB_QUALITY, samples: THUMB_SAMPLES });
   readInto(cv.getContext('2d'), w, h);
   Object.assign(P, JSON.parse(savedP));
   ANIM.cloud = savedCloud;
@@ -709,7 +716,7 @@ function renderThumb(look, cv) {
 // nothing is touched, cards in view first. Each new look can mean a shader compile, which on a
 // phone stalls the page, so finished thumbnails are kept across visits.
 function nextThumb() {
-  if (!thumbQueue.length || accN < REFINE || pointers.size || C.on || panel.classList.contains('hidden')) return;
+  if (!thumbQueue.length || accN < REFINE || pointers.size || C.on || !panelOpen()) return;
   const strip = $('looks').getBoundingClientRect();
   const i = thumbQueue.findIndex(([, cv]) => { const r = cv.getBoundingClientRect(); return r.right > strip.left && r.left < strip.right; });
   const [look, cv, key] = thumbQueue.splice(Math.max(0, i), 1)[0];
@@ -818,7 +825,9 @@ const panel = $('panel');
 const bar = $('bar');
 const F = { x: 0, y: 0, w: 1, h: 1, cx: 0 };
 const BAR_SPACE = 80;
+const PANEL_SPACE = 324; // the panel's width plus its margin and gap
 const NARROW = matchMedia('(max-width: 700px)'); // the phone layout in the stylesheet
+const panelOpen = () => !panel.classList.contains('hidden');
 
 // Safe-area insets in CSS pixels (notch, Dynamic Island, home indicator), read from the stylesheet.
 const safeProbe = el('div', null, document.body);
@@ -831,9 +840,9 @@ function safeArea() {
 function layout() {
   // The canvas box, not innerWidth/innerHeight: iOS reports those late and with the toolbar state.
   const vw = canvas.clientWidth || innerWidth, vh = canvas.clientHeight || innerHeight, sa = safeArea();
-  const open = !panel.classList.contains('hidden');
+  const open = panelOpen();
   const narrow = NARROW.matches;
-  const x0 = sa.l, x1 = vw - sa.r - (open && !narrow ? 324 : 0);
+  const x0 = sa.l, x1 = vw - sa.r - (open && !narrow ? PANEL_SPACE : 0);
   const y0 = sa.t + (narrow ? 56 : 0);
   const y1 = vh - sa.b - (narrow ? (open ? panel.offsetHeight + 16 : 0) : BAR_SPACE);
   const aw = x1 - x0, ah = y1 - y0;
@@ -853,7 +862,7 @@ function layout() {
 // drop the timelapse controls, then the size readout, when space runs short.
 function placeBar() {
   const vw = innerWidth, narrow = NARROW.matches, sa = safeArea();
-  const right = (!panel.classList.contains('hidden') && !narrow ? vw - 324 : vw) - sa.r - 8;
+  const right = (panelOpen() && !narrow ? vw - PANEL_SPACE : vw) - sa.r - 8;
   const left = narrow || C.on ? sa.l + 8 : $('credit').getBoundingClientRect().right + 12;
   bar.classList.remove('compact', 'tight');
   if (C.on && bar.offsetWidth > right - left) bar.classList.add('compact');
@@ -3569,14 +3578,19 @@ function fitTarget(t, w, h, format) {
   return target(w, h, format);
 }
 
-// Copies the bound framebuffer into a 2D canvas, flipping it upright.
+// RGBA8 pixels read back from a framebuffer (rows bottom up) as an upright ImageData.
+function upright(px, w, h) {
+  const img = new ImageData(w, h);
+  for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+  return img;
+}
+
+// Copies the bound framebuffer into a 2D canvas.
 function readInto(ctx, w, h) {
   const px = new Uint8ClampedArray(w * h * 4);
   gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  const img = new ImageData(w, h);
-  for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
-  ctx.putImageData(img, 0, 0);
+  ctx.putImageData(upright(px, w, h), 0, 0);
 }
 
 gl.bindVertexArray(gl.createVertexArray());
@@ -3662,7 +3676,7 @@ function skyMeter(b) {
     const wj = Math.cos(s * s * Math.PI / 2) * s;
     for (let i = 1; i < SKY_W; i++) {
       const w = wj * i, o = (j * SKY_W + i) * 4;
-      sum += w * (0.2126 * b[o] + 0.7152 * b[o + 1] + 0.0722 * b[o + 2]);
+      sum += w * luma(b[o], b[o + 1], b[o + 2]);
       wsum += w;
     }
   }
@@ -3671,8 +3685,7 @@ function skyMeter(b) {
 
 // The share of light the ground bounces back into the air: water reflects little, land its colour.
 function groundAlbedo() {
-  const [r, g, b] = hexLinear(P.surfColorA);
-  return P.surface === 1 ? 0.06 : 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return P.surface === 1 ? 0.06 : luma(...hexLinear(P.surfColorA));
 }
 
 function renderSkyLUT(t, elev) {
@@ -3754,9 +3767,22 @@ function updateStarStats() {
 // ─── Scene State ────────────────────────────────────────────────────────────
 
 const D = {};
-const ANIM = { time: 0, micro: 0, cloud: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] };
+const ANIM = { time: 0, micro: 0, cloud: cloudsAtRest() };
 
 const MOON_I = 2e-5;
+
+// Each cloud layer's drift (x, z) and morph, before any timelapse has moved it.
+function cloudsAtRest() {
+  return [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+}
+
+// Rows laid end to end in a zero-filled array of `len` numbers: a uniform array with fixed slots,
+// empty past the rows given.
+function pack(len, rows) {
+  const out = new Array(len).fill(0);
+  rows.forEach((row, i) => out.splice(i * row.length, row.length, ...row));
+  return out;
+}
 
 function rng(seed) {
   let a = seed >>> 0;
@@ -3834,9 +3860,7 @@ function treeField() {
     i++;
   }
   out.sort((a, b) => a[0] - b[0]);
-  const flat = new Array(64).fill(0);
-  out.forEach(([, x, z, h, w], i) => flat.splice(i * 4, 4, x, z, h, w));
-  return { trees: flat, n: out.length };
+  return { trees: pack(64, out.map(([, ...tree]) => tree)), n: out.length };
 }
 
 function derive(img) {
@@ -3863,19 +3887,17 @@ function derive(img) {
   D.meteorN = P.meteors;
   const layers = [0, 1, 2].filter(i => P[`c${i}On`] && P[`c${i}Cover`] > 0).sort((a, b) => P[`c${a}Alt`] - P[`c${b}Alt`]);
   D.cloudN = layers.length;
-  D.cloudA = new Array(12).fill(0);
-  D.cloudB = new Array(12).fill(0);
-  D.cloudC = new Array(12).fill(0);
-  D.cloudD = new Array(12).fill(0);
-  D.cloudE = new Array(12).fill(0);
-  layers.forEach((i, n) => {
+  const clouds = layers.map(i => {
     const c = k => P[`c${i}${k}`], w = c('Wind') * DEG, a = ANIM.cloud[i];
-    D.cloudA.splice(n * 4, 4, c('Cover'), c('Dens'), c('Alt'), c('Thick'));
-    D.cloudB.splice(n * 4, 4, c('Scale'), c('Billow'), c('Cells'), c('Streak'));
-    D.cloudC.splice(n * 4, 4, c('Detail'), c('Soft'), a[2], c('Seed') + i * 7.3);
-    D.cloudD.splice(n * 4, 4, Math.sin(w), Math.cos(w), a[0], a[1]);
-    D.cloudE.splice(n * 4, 4, c('Vary'), 0, 0, 0);
+    return [
+      [c('Cover'), c('Dens'), c('Alt'), c('Thick')],
+      [c('Scale'), c('Billow'), c('Cells'), c('Streak')],
+      [c('Detail'), c('Soft'), a[2], c('Seed') + i * 7.3],
+      [Math.sin(w), Math.cos(w), a[0], a[1]],
+      [c('Vary'), 0, 0, 0],
+    ];
   });
+  [D.cloudA, D.cloudB, D.cloudC, D.cloudD, D.cloudE] = [0, 1, 2, 3, 4].map(j => pack(12, clouds.map(rows => rows[j])));
   updateAtmosphere();
   const ev = Math.pow(2, P.ev);
   // Exposure is metered for a sun of unit strength, so Sunlight brightens what the sun lights.
@@ -3888,23 +3910,18 @@ function derive(img) {
   D.moonDisk = ev * P.moonBright * (nightVis * 1.5 + sunVis * 0.05 * gain);
   const on = [0, 1].filter(i => P[`b${i}On`]);
   D.bodyN = on.length;
-  D.bodyA = new Array(8).fill(0);
-  D.bodyB = new Array(8).fill(0);
-  D.bodyC = new Array(8).fill(0);
-  D.bodyD = new Array(8).fill(0);
-  D.bodyCol1 = new Array(6).fill(0);
-  D.bodyCol2 = new Array(6).fill(0);
-  D.bodyRing = new Array(6).fill(0);
-  on.forEach((i, n) => {
+  const bodies = on.map(i => {
     const b = k => P[`b${i}${k}`], al = b('Phase') * Math.PI, th = b('Light') * DEG;
-    D.bodyA.splice(n * 4, 4, ...skyVector(b('Elev'), b('Heading')), b('Size') / 2 * DEG);
-    D.bodyB.splice(n * 4, 4, b('Type'), 2.2 * ev * b('Bright') * (nightVis + 0.35 * sunVis), b('Ring'), b('Atmo'));
-    D.bodyC.splice(n * 4, 4, Math.sin(al) * Math.cos(th), Math.sin(al) * Math.sin(th), Math.cos(al), b('Seed'));
-    D.bodyD.splice(n * 4, 4, b('Roll') * DEG, b('Lean') * DEG, b('RingIn'), Math.max(b('RingOut'), b('RingIn') + 0.05));
-    D.bodyCol1.splice(n * 3, 3, ...hexLinear(b('ColorA')));
-    D.bodyCol2.splice(n * 3, 3, ...hexLinear(b('ColorB')));
-    D.bodyRing.splice(n * 3, 3, ...hexLinear(b('RingColor')));
+    return [
+      [...skyVector(b('Elev'), b('Heading')), b('Size') / 2 * DEG],
+      [b('Type'), 2.2 * ev * b('Bright') * (nightVis + 0.35 * sunVis), b('Ring'), b('Atmo')],
+      [Math.sin(al) * Math.cos(th), Math.sin(al) * Math.sin(th), Math.cos(al), b('Seed')],
+      [b('Roll') * DEG, b('Lean') * DEG, b('RingIn'), Math.max(b('RingOut'), b('RingIn') + 0.05)],
+      hexLinear(b('ColorA')), hexLinear(b('ColorB')), hexLinear(b('RingColor')),
+    ];
   });
+  [D.bodyA, D.bodyB, D.bodyC, D.bodyD] = [0, 1, 2, 3].map(j => pack(8, bodies.map(rows => rows[j])));
+  [D.bodyCol1, D.bodyCol2, D.bodyRing] = [4, 5, 6].map(j => pack(6, bodies.map(rows => rows[j])));
 }
 
 function sceneValues(img) {
@@ -3974,10 +3991,11 @@ function advance(dtReal) {
   ANIM.micro += dtReal * Math.min(ANIM.rate, 4);
   if (P.motionSky) {
     const h = dt / 3600;
-    setSkyVector(rotateAboutPole(skyVector(P.sunElev, P.sunHeading), 15 * h), 'sunElev', 'sunHeading');
-    setSkyVector(rotateAboutPole(skyVector(P.moonElev, P.moonHeading), 14.49 * h), 'moonElev', 'moonHeading');
-    for (const i of [0, 1]) if (P[`b${i}On`]) setSkyVector(rotateAboutPole(skyVector(P[`b${i}Elev`], P[`b${i}Heading`]), 15 * h), `b${i}Elev`, `b${i}Heading`);
-    if (P.gal > 0) setSkyVector(rotateAboutPole(skyVector(P.galElev, P.galHeading), 15.041 * h), 'galElev', 'galHeading');
+    const turn = (elevKey, headKey, deg) => setSkyVector(rotateAboutPole(skyVector(P[elevKey], P[headKey]), deg), elevKey, headKey);
+    turn('sunElev', 'sunHeading', 15 * h);
+    turn('moonElev', 'moonHeading', 14.49 * h);
+    for (const i of [0, 1]) if (P[`b${i}On`]) turn(`b${i}Elev`, `b${i}Heading`, 15 * h);
+    if (P.gal > 0) turn('galElev', 'galHeading', 15.041 * h);
     P.skyRotation = ((P.skyRotation + 15.041 * h) % 360 + 360) % 360;
   }
   if (P.motionClouds) {
@@ -3990,11 +4008,18 @@ function advance(dtReal) {
   }
 }
 
+// What the timelapse moves, as it stood when play started: Reset Time puts it back.
 const ORIGIN_KEYS = ['sunElev', 'sunHeading', 'moonElev', 'moonHeading', 'skyRotation', 'b0Elev', 'b0Heading', 'b1Elev', 'b1Heading', 'galElev', 'galHeading'];
+const skyOrigin = () => Object.fromEntries(ORIGIN_KEYS.map(k => [k, P[k]]));
+
+// Back to the start of the timelapse, with `origin` as the point to return to.
+function rewindAnim(origin = null) {
+  Object.assign(ANIM, { time: 0, micro: 0, elapsed: 0, origin, cloud: cloudsAtRest() });
+}
 
 function setPlaying(on) {
   if (on === ANIM.playing) return;
-  if (on && !ANIM.origin) ANIM.origin = Object.fromEntries(ORIGIN_KEYS.map(k => [k, P[k]]));
+  if (on && !ANIM.origin) ANIM.origin = skyOrigin();
   ANIM.playing = on;
   if (!on) commitSoon();
   const shown = lowOK;
@@ -4006,8 +4031,7 @@ function setPlaying(on) {
 
 function resetTime() {
   if (ANIM.origin) Object.assign(P, ANIM.origin);
-  Object.assign(ANIM, { time: 0, micro: 0, elapsed: 0, origin: ANIM.playing ? Object.fromEntries(ORIGIN_KEYS.map(k => [k, P[k]])) : null });
-  ANIM.cloud = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  rewindAnim(ANIM.playing ? skyOrigin() : null);
   changed();
 }
 
@@ -4017,8 +4041,10 @@ function setRate(rate) {
   syncUI();
 }
 
+const rateIndex = () => RATES.findIndex(([r]) => r === ANIM.rate);
+
 function rateLabel() {
-  return (RATES.find(([r]) => r === ANIM.rate) || RATES[2])[1];
+  return (RATES[rateIndex()] || RATES[2])[1];
 }
 
 function elapsedLabel() {
@@ -4032,6 +4058,7 @@ const VIEW = Object.assign({ scale: 1 }, store('horizon-view'));
 // The canvas matches the screen's own pixels, up to 3×: a 2× canvas on a 3× phone is resampled by
 // 1.5, which softens everything and turns the dither into a faint grid.
 const MAX_DPR = 3;
+const screenDpr = () => Math.min(window.devicePixelRatio || 1, MAX_DPR);
 const REFINE = 12; // frames averaged once the view holds still
 const FADE = 4; // passes over which a refreshed view takes over from the reprojected previous one
 let needLow = true, needFull = true, lastChange = 0, lowTarget = null, accTarget = null, accN = 0;
@@ -4236,7 +4263,7 @@ function viewMapping(cw) {
 }
 
 function resizeCanvas() {
-  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR), r = canvas.getBoundingClientRect();
+  const dpr = screenDpr(), r = canvas.getBoundingClientRect();
   // The exact size only settles rounding: some (emulated) setups report CSS pixels there.
   const exact = devSize && dpr === window.devicePixelRatio && Math.abs(devSize[0] - r.width * dpr) < 2 && Math.abs(devSize[1] - r.height * dpr) < 2;
   const w = Math.max(1, Math.round((exact ? devSize[0] : r.width * dpr) * VIEW.scale));
@@ -4430,6 +4457,7 @@ async function encodeJPEG(rgba, W, H) {
 }
 
 let job = null;
+const FORMAT_NAMES = { png: 'PNG', jpg: 'JPEG', mp4: 'MP4' };
 
 function busy(title, frac, meta) {
   $('busy').classList.add('on');
@@ -4487,7 +4515,7 @@ async function saveStill() {
   const rgba = await renderTiles(W, H, { step: 1, samples: C.samples, quality: C.samples > 4 ? 1.5 : 1.2 },
     f => busy(`Rendering ${label}`, f * 0.7, `${Math.round(f * 100)}% rendered`));
   if (job.cancel) return;
-  busy(`Encoding ${format === 'png' ? 'PNG' : 'JPEG'}`, 0.7, label);
+  busy(`Encoding ${FORMAT_NAMES[format]}`, 0.7, label);
   await nextFrame();
   const blob = format === 'png'
     ? await encodePNG(rgba, W, H, f => busy('Encoding PNG', 0.7 + f * 0.3, label))
@@ -4644,11 +4672,14 @@ $('busy-cancel').onclick = () => { if (job) job.cancel = true; };
 
 // ─── Controls ───────────────────────────────────────────────────────────────
 
-let cloudSel = 0;
+// The cloud layer and body the "c#" and "b#" controls edit.
+let cloudSel = 0, bodySel = 0;
+const resolveKey = key => key.startsWith('b#') ? `b${bodySel}${key.slice(2)}` : key.replace('#', cloudSel);
+function firstCloudLayer() {
+  return [0, 1, 2].find(i => P[`c${i}On`]) ?? 0;
+}
 const fmt = d => v => v.toFixed(d);
 const km = v => v.toFixed(2) + ' km';
-let bodySel = 0;
-const resolveKey = key => key.startsWith('b#') ? `b${bodySel}${key.slice(2)}` : key.replace('#', cloudSel);
 const layerOn = () => P[resolveKey('c#On')];
 const bodyOn = () => P[resolveKey('b#On')];
 const deg = v => v.toFixed(0) + '°';
@@ -5083,6 +5114,15 @@ function segRow(body, label, cols) {
   return el('div', 'seg' + (cols ? ' c' + cols : ''), row);
 }
 
+// One button per option in a strip: `pick(value)` applies it, `active(value)` says whether it is lit.
+function choiceButtons(seg, options, pick, active) {
+  for (const { value, title } of options) {
+    const b = el('button', 'btn', seg, title);
+    b.onclick = () => pick(value);
+    refreshers.push(() => b.classList.toggle('active', active(value)));
+  }
+}
+
 function buildItem(it, body) {
   const { get, set } = accessor(it);
   if (it.type === 'custom') return it.build(body);
@@ -5104,11 +5144,7 @@ function buildItem(it, body) {
   }
   if (it.type === 'choice') {
     const seg = segRow(body, it.label, it.cols), row = seg.parentNode;
-    for (const o of it.options) {
-      const b = el('button', 'btn', seg, o.title);
-      b.onclick = () => { set(o.value); it.after?.(); changed(); };
-      refreshers.push(() => b.classList.toggle('active', get() === o.value));
-    }
+    choiceButtons(seg, it.options, v => { set(v); it.after?.(); changed(); }, v => get() === v);
     if (it.when) refreshers.push(() => row.classList.toggle('off', !it.when()));
     return;
   }
@@ -5139,37 +5175,59 @@ function buildItem(it, body) {
 }
 
 function buildSurfaces(body) {
-  const seg = segRow(body, 'Surface Type', 3);
-  for (const [title, type, values] of SURFACES) {
-    const b = el('button', 'btn', seg, title);
-    b.onclick = () => { Object.assign(P, values, { surface: type }); changed(); };
-    refreshers.push(() => b.classList.toggle('active', P.surface === type && P.surfColorA === values.surfColorA));
-  }
+  choiceButtons(segRow(body, 'Surface Type', 3), SURFACES.map(([title, type, values]) => ({ title, value: { ...values, surface: type } })),
+    values => { Object.assign(P, values); changed(); },
+    values => P.surface === values.surface && P.surfColorA === values.surfColorA);
 }
 
-function buildLayerPicker(body) {
-  const seg = segRow(body, null, 3);
-  for (let i = 0; i < 3; i++) {
+// Picks which of `n` slots (cloud layers, bodies) the controls below edit; a slot in use is
+// labelled by what it holds.
+function buildSlotPicker(body, n, label, select, selected) {
+  const seg = segRow(body, null, n);
+  for (let i = 0; i < n; i++) {
     const b = el('button', 'btn', seg);
-    b.onclick = () => { cloudSel = i; syncUI(); };
+    b.onclick = () => { select(i); syncUI(); };
     refreshers.push(() => {
-      b.classList.toggle('active', cloudSel === i);
-      b.textContent = P[`c${i}On`] ? `${P[`c${i}Alt`].toFixed(1)} km` : `Layer ${i + 1}`;
+      b.classList.toggle('active', selected() === i);
+      b.textContent = label(i);
     });
   }
 }
 
+function buildLayerPicker(body) {
+  buildSlotPicker(body, 3, i => P[`c${i}On`] ? `${P[`c${i}Alt`].toFixed(1)} km` : `Layer ${i + 1}`, i => { cloudSel = i; }, () => cloudSel);
+}
+
+function buildBodyPicker(body) {
+  buildSlotPicker(body, 2, i => P[`b${i}On`] ? BODY_TYPES[P[`b${i}Type`]][0] : `Body ${i + 1}`, i => { bodySel = i; }, () => bodySel);
+}
+
 function buildCloudTypes(body) {
-  const seg = segRow(body, 'Cloud Type', 3);
-  for (const [name, values] of Object.entries(CLOUD_TYPES)) {
-    const b = el('button', 'btn', seg, name[0].toUpperCase() + name.slice(1));
-    b.onclick = () => {
-      for (const [k, v] of Object.entries(values)) P[`c${cloudSel}${k}`] = v;
-      P[`c${cloudSel}On`] = true;
+  const key = k => resolveKey(`c#${k}`);
+  choiceButtons(segRow(body, 'Cloud Type', 3), Object.entries(CLOUD_TYPES).map(([name, values]) => ({ title: name[0].toUpperCase() + name.slice(1), value: values })),
+    values => {
+      for (const [k, v] of Object.entries(values)) P[key(k)] = v;
+      P[key('On')] = true;
       changed();
-    };
-    refreshers.push(() => b.classList.toggle('active', Object.entries(values).every(([k, v]) => P[`c${cloudSel}${k}`] === v)));
-  }
+    },
+    values => Object.entries(values).every(([k, v]) => P[key(k)] === v));
+}
+
+function buildBodyTypes(body) {
+  const key = k => resolveKey(`b#${k}`);
+  choiceButtons(segRow(body, 'Kind', 3), BODY_TYPES.map(([title], type) => ({ title, value: type })),
+    type => {
+      for (const [k, v] of Object.entries(BODY_TYPES[type][1])) P[key(k)] = v;
+      Object.assign(P, { [key('Type')]: type, [key('On')]: true });
+      changed();
+    },
+    type => P[key('Type')] === type);
+}
+
+function buildBandStyles(body) {
+  choiceButtons(segRow(body, 'Style', 3), BAND_STYLES.map(([title, value]) => ({ title, value })),
+    values => { Object.assign(P, values); if (!P.mw) P.mw = 1; changed(); },
+    values => P.mw > 0 && Object.entries(values).every(([k, v]) => P[k] === v));
 }
 
 function colorInput(key) {
@@ -5181,47 +5239,9 @@ function colorInput(key) {
   return input;
 }
 
-function buildBandStyles(body) {
-  const seg = segRow(body, 'Style', 3);
-  for (const [name, values] of BAND_STYLES) {
-    const b = el('button', 'btn', seg, name);
-    b.onclick = () => { Object.assign(P, values); if (!P.mw) P.mw = 1; changed(); };
-    refreshers.push(() => b.classList.toggle('active', P.mw > 0 && Object.entries(values).every(([k, v]) => P[k] === v)));
-  }
-}
-
-function buildBodyPicker(body) {
-  const seg = segRow(body, null, 2);
-  for (let i = 0; i < 2; i++) {
-    const b = el('button', 'btn', seg);
-    b.onclick = () => { bodySel = i; syncUI(); };
-    refreshers.push(() => {
-      b.classList.toggle('active', bodySel === i);
-      b.textContent = P[`b${i}On`] ? BODY_TYPES[P[`b${i}Type`]][0] : `Body ${i + 1}`;
-    });
-  }
-}
-
-function buildBodyTypes(body) {
-  const seg = segRow(body, 'Kind', 3);
-  BODY_TYPES.forEach(([name, values], type) => {
-    const b = el('button', 'btn', seg, name);
-    b.onclick = () => {
-      for (const [k, v] of Object.entries(values)) P[`b${bodySel}${k}`] = v;
-      Object.assign(P, { [`b${bodySel}Type`]: type, [`b${bodySel}On`]: true });
-      changed();
-    };
-    refreshers.push(() => b.classList.toggle('active', P[`b${bodySel}Type`] === type));
-  });
-}
-
 function buildAspect(body) {
-  const seg = segRow(body, 'Aspect Ratio');
-  for (const [name, a, b] of ASPECTS) {
-    const btn = el('button', 'btn', seg, name);
-    btn.onclick = () => setCapture({ ratio: a / b });
-    refreshers.push(() => btn.classList.toggle('active', Math.abs(C.ratio - a / b) < 1e-4));
-  }
+  choiceButtons(segRow(body, 'Aspect Ratio'), ASPECTS.map(([title, a, b]) => ({ title, value: a / b })),
+    ratio => setCapture({ ratio }), ratio => Math.abs(C.ratio - ratio) < 1e-4);
 }
 
 function buildDevice(body) {
@@ -5244,22 +5264,18 @@ function buildDevice(body) {
 }
 
 function buildSize(body) {
-  const seg = segRow(body, 'Long Edge', 3);
-  for (const [name, L] of SIZES) {
-    const btn = el('button', 'btn', seg, name);
-    btn.onclick = () => setCapture({ long: L });
-    refreshers.push(() => btn.classList.toggle('active', C.long === L));
-  }
+  choiceButtons(segRow(body, 'Long Edge', 3), SIZES.map(([title, value]) => ({ title, value })),
+    long => setCapture({ long }), long => C.long === long);
   const dims = el('div', 'row dims', body);
   const wIn = el('input', 'num', dims);
   el('span', null, dims, '×');
   const hIn = el('input', 'num', dims);
   for (const [inp, id] of [[wIn, 'cap-w'], [hIn, 'cap-h']]) Object.assign(inp, { id, type: 'number', min: 64, max: MAX_SIDE, step: 1 });
-  const commit = () => {
+  const applyDims = () => {
     const w = clamp(Math.round(+wIn.value) || 64, 64, MAX_SIDE), h = clamp(Math.round(+hIn.value) || 64, 64, MAX_SIDE);
     setCapture({ ratio: w / h, long: Math.max(w, h) });
   };
-  wIn.onchange = hIn.onchange = commit;
+  wIn.onchange = hIn.onchange = applyDims;
   const note = el('div', 'note', body);
   refreshers.push(() => {
     const [W, H] = captureDims();
@@ -5311,7 +5327,7 @@ function buildLookStrip() {
   thumbCache.live.clear();
   for (const look of [...PRESETS, ...looks]) {
     const card = el('button', 'preset', strip);
-    const cv = el('canvas', null, card), dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    const cv = el('canvas', null, card), dpr = screenDpr();
     // One pixel per screen pixel inside the card's border (70×44 outside it).
     cv.width = Math.round((cv.clientWidth || 68) * dpr);
     cv.height = Math.round((cv.clientHeight || 42) * dpr);
@@ -5415,10 +5431,7 @@ function buildUI() {
   play.onclick = () => setPlaying(!ANIM.playing);
   const rateBtn = el('button', 'btn ghost', bar);
   rateBtn.title = 'Timelapse speed';
-  rateBtn.onclick = () => {
-    const i = RATES.findIndex(([r]) => r === ANIM.rate);
-    setRate(RATES[(i + 1) % RATES.length][0]);
-  };
+  rateBtn.onclick = () => setRate(RATES[(rateIndex() + 1) % RATES.length][0]);
   const clock = el('span', 'info clock', bar);
   const reset = el('button', 'icon', bar);
   reset.title = 'Reset time';
@@ -5434,17 +5447,17 @@ function buildUI() {
   const info = el('span', 'info', group);
   staticRefreshers.push(() => {
     const [W, H] = captureDims();
-    info.innerHTML = `<b>${W} × ${H}</b> · ${(W * H / 1e6).toFixed(1)} MP · ${C.format === 'png' ? 'PNG' : C.format === 'jpg' ? 'JPEG' : 'MP4'}`;
+    info.innerHTML = `<b>${W} × ${H}</b> · ${(W * H / 1e6).toFixed(1)} MP · ${FORMAT_NAMES[C.format]}`;
   });
   const toggles = [
-    ['grid', 'Thirds grid', '<path d="M5.5 2v12M10.5 2v12M2 5.5h12M2 10.5h12"/>'],
-    ['loupe', 'Pixel loupe (L)', '<circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4L14 14"/>'],
+    ['grid', 'Thirds grid', '<path d="M5.5 2v12M10.5 2v12M2 5.5h12M2 10.5h12"/>', () => setCapture({ grid: !C.grid })],
+    ['loupe', 'Pixel loupe (L)', '<circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4L14 14"/>', toggleLoupe],
   ];
-  for (const [key, title, icon] of toggles) {
+  for (const [key, title, icon, flip] of toggles) {
     const b = el('button', 'icon', group);
     b.title = title;
     b.innerHTML = svg(icon);
-    b.onclick = () => { key === 'grid' ? setCapture({ grid: !C.grid }) : (C.loupe = !C.loupe, syncUI()); };
+    b.onclick = flip;
     staticRefreshers.push(() => b.classList.toggle('on', !!C[key]));
   }
   el('button', 'btn', group, 'Done').onclick = () => setCaptureMode(false);
@@ -5460,6 +5473,11 @@ function setCaptureMode(on) {
   for (const id of ['looks', 'tabs']) $(id).hidden = on;
   if (on) $('save-row').hidden = true;
   renderMenu(on ? CAPTURE_MENU : TABS.find(t => t.id === tab));
+}
+
+function toggleLoupe() {
+  C.loupe = !C.loupe;
+  syncUI();
 }
 
 // ─── Input ──────────────────────────────────────────────────────────────────
@@ -5538,7 +5556,7 @@ canvas.addEventListener('webglcontextlost', e => {
   try { last = +sessionStorage.getItem('horizon-reloaded') || 0; } catch {}
   if (Date.now() - last < 15000) { fail('The GPU context was lost. Reload the page to continue.'); return; }
   try {
-    sessionStorage.setItem('horizon-resume', JSON.stringify({ P, tab, capture: C.on, panel: !panel.classList.contains('hidden') }));
+    sessionStorage.setItem('horizon-resume', JSON.stringify({ P, tab, capture: C.on, panel: panelOpen() }));
     sessionStorage.setItem('horizon-reloaded', String(Date.now()));
   } catch {}
   const reload = () => { if (!document.hidden) location.reload(); };
@@ -5556,14 +5574,11 @@ window.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.matches('input, select, textarea')) return;
   const k = e.key.toLowerCase();
-  if (k === 'h') setPanel(panel.classList.contains('hidden'));
+  if (k === 'h') setPanel(!panelOpen());
   else if (k === 'c') setCaptureMode(!C.on);
-  else if (k === 'l' && C.on) { C.loupe = !C.loupe; syncUI(); }
+  else if (k === 'l' && C.on) toggleLoupe();
   else if (k === ' ') { e.preventDefault(); setPlaying(!ANIM.playing); }
-  else if (k === '[' || k === ']') {
-    const i = RATES.findIndex(([r]) => r === ANIM.rate);
-    setRate(RATES[clamp(i + (k === ']' ? 1 : -1), 0, RATES.length - 1)][0]);
-  }
+  else if (k === '[' || k === ']') setRate(RATES[clamp(rateIndex() + (k === ']' ? 1 : -1), 0, RATES.length - 1)][0]);
   else if (k === 'escape') { if ($('sheet').classList.contains('on')) closeSheet(); else if (C.on) setCaptureMode(false); }
 });
 window.addEventListener('resize', layout);
@@ -5591,7 +5606,7 @@ const DIAG = DIAG_ARG !== null;
 // to: where the sky is drawn; f16 is the RGBA16F accumulation target, read back as float. passes
 // add up with blending, in row bands of `band` under the scissor, then `resolve` divides them out.
 const DIAG_PATHS = {
-  thumb: { to: 't8', q: 0.8, samples: THUMB_SAMPLES },    // renderThumb
+  thumb: { to: 't8', q: THUMB_QUALITY, samples: THUMB_SAMPLES }, // renderThumb
   f16: { to: 'f16' },
   acc1: { to: 'f16', passes: 1, resolve: 't8' },
   acc4: { to: 'f16', passes: 4, resolve: 't8' },
@@ -5767,7 +5782,7 @@ async function runDiag() {
     `dpr ${env.dpr} · canvas ${env.canvas.join('×')} · css ${env.css.join('×')} · maxTex ${env.maxTexture}`,
     `PHONE ${PHONE} · FRAME_PX ${FRAME_PX} · budget ${env.budget}`,
   ].join('\n'));
-  const bar = el('div', 'row-b', ui), copy = el('button', 'btn', bar, 'Copy results'), status = el('span', '', bar, 'compiling…');
+  const actions = el('div', 'row-b', ui), copy = el('button', 'btn', actions, 'Copy results'), status = el('span', '', actions, 'compiling…');
   copy.disabled = true;
   const table = el('table', '', ui);
   table.innerHTML = '<tr><th>case</th><th></th><th>8×4%</th><th>4×4%</th><th>8×8%</th><th>edge</th><th>blk</th><th>NaN</th><th>ms</th></tr>';
@@ -5800,7 +5815,7 @@ async function runDiag() {
     try {
       if ((c.diag && !dg.prog) || (c.fast && !dg.fast)) throw new Error('no diag shader');
       Object.assign(P, lookParams(c.scene));
-      Object.assign(ANIM, { time: 0, micro: 0, cloud: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] });
+      rewindAnim();
       const values = sceneValues([c.w * (c.step || 1), c.h * (c.step || 1)]);
       gl.getError();
       const t = performance.now(), { px, f } = diagRender({ ...c, prog: c.fast ? dg.fast : c.diag ? dg.prog : skyProgram(sceneFeatures()) }, values);
@@ -5832,9 +5847,7 @@ async function runDiag() {
         cv.width = c.w;
         cv.height = c.h;
         cv.style.width = c.w / devicePixelRatio + 'px'; // one image pixel per device pixel
-        const img = new ImageData(c.w, c.h);
-        for (let y = 0; y < c.h; y++) img.data.set(px.subarray((c.h - 1 - y) * c.w * 4, (c.h - y) * c.w * 4), y * c.w * 4);
-        cv.getContext('2d').putImageData(img, 0, 0);
+        cv.getContext('2d').putImageData(upright(px, c.w, c.h), 0, 0);
       }
     } catch (e) {
       row.error = String(e.message || e);
@@ -5908,7 +5921,7 @@ function frame(now) {
 const resume = (() => { try { const r = JSON.parse(sessionStorage.getItem('horizon-resume')); sessionStorage.removeItem('horizon-resume'); return r; } catch { return null; } })();
 if (resume && resume.P) {
   Object.assign(P, resume.P);
-  cloudSel = [0, 1, 2].find(i => P[`c${i}On`]) ?? 0;
+  cloudSel = firstCloudLayer();
   if (typeof resume.tab === 'string') tab = resume.tab;
 }
 buildUI();

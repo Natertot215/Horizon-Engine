@@ -10,20 +10,11 @@
 // field. Screenshots go to --out (default: horizon-mobile-sim in the temp folder). SwiftShader is a CPU
 // rasterizer, so timings say nothing about an iPhone; what is drawn, where and when is the same.
 
-import { createRequire } from 'module';
-import http from 'http';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { launch, serveApp, check, assert, harnessFailed, finish } from './harness.mjs';
 
-const require = createRequire(process.env.PLAYWRIGHT_MODULES || '/opt/node-tools/node_modules/');
-const { chromium } = require('playwright');
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(HERE, '..');
-const CHROMIUM = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
-const ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-proxy-server'];
 const argv = process.argv.slice(2);
 const OUT = path.resolve(argv.includes('--out') ? argv[argv.indexOf('--out') + 1] : path.join(os.tmpdir(), 'horizon-mobile-sim'));
 const URL_ARG = argv.find((a, i) => !a.startsWith('--') && argv[i - 1] !== '--out');
@@ -34,44 +25,11 @@ const IPHONE = {
 };
 const LANDSCAPE_SAFE = { top: 0, left: 62, right: 62, bottom: 21 }; // iPhone 17 on its side
 
-const results = [];
-async function check(name, fn) {
-  const t0 = Date.now();
-  try {
-    const note = await fn();
-    results.push({ name, ok: true });
-    console.log(`PASS  ${name} (${((Date.now() - t0) / 1000).toFixed(1)}s)${note ? '\n      ' + note : ''}`);
-  } catch (e) {
-    results.push({ name, ok: false });
-    console.log(`FAIL  ${name} (${((Date.now() - t0) / 1000).toFixed(1)}s)\n      ${String(e && e.message || e).split('\n').join('\n      ')}`);
-  }
-}
-
-function assert(cond, msg) {
-  if (!cond) throw new Error(msg);
-}
-
-function serve() {
-  const server = http.createServer((req, res) => {
-    const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
-    const file = path.resolve(ROOT, rel);
-    if (!file.startsWith(ROOT + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-      res.statusCode = rel === 'favicon.ico' ? 204 : 404;
-      return res.end();
-    }
-    if (file.endsWith('.html')) res.setHeader('content-type', 'text/html');
-    fs.createReadStream(file).pipe(res);
-  });
-  return new Promise(r => server.listen(0, '127.0.0.1', () => r(server)));
-}
-
-const t0 = Date.now();
-let server = null, browser = null;
+let app = null, browser = null;
 try {
   fs.mkdirSync(OUT, { recursive: true });
-  let url = URL_ARG;
-  if (!url) { server = await serve(); url = `http://127.0.0.1:${server.address().port}/index.html`; }
-  browser = await chromium.launch({ executablePath: CHROMIUM, headless: true, args: ARGS });
+  app = await serveApp(URL_ARG);
+  browser = await launch();
   const context = await browser.newContext(IPHONE);
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
@@ -88,7 +46,7 @@ try {
   const refined = (n = 12) => page.waitForFunction(n => accN >= n && !refineY && !needFull, n, { timeout: 300000, polling: 250 });
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
 
-  await page.goto(url, { waitUntil: 'commit' });
+  await page.goto(app.url, { waitUntil: 'commit' });
   await check('first load: no errors, canvas at the screen\'s own pixel density', async () => {
     await page.waitForFunction(() => typeof frame === 'function' && canvas.width > 300, null, { timeout: 120000 });
     for (const ms of [500, 3000]) { await page.waitForTimeout(ms); await shot(`01-load-${ms}ms`); }
@@ -219,13 +177,9 @@ try {
     assert(!log.length, log.join('\n'));
   });
 } catch (e) {
-  results.push({ name: 'harness', ok: false });
-  console.log(`FAIL  harness\n      ${e && e.stack || e}`);
+  harnessFailed(e);
 } finally {
   if (browser) await browser.close();
-  if (server) server.close();
+  if (app) app.close();
 }
-
-const failed = results.filter(r => !r.ok);
-console.log(`\n${results.length - failed.length}/${results.length} checks passed in ${((Date.now() - t0) / 1000).toFixed(0)}s · screenshots in ${OUT}`);
-process.exit(failed.length ? 1 : 0);
+finish(` · screenshots in ${OUT}`);

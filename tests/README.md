@@ -7,7 +7,7 @@ Headless Chromium + SwiftShader checks for the invariants the iPhone 8×4-block 
     node tests/render.test.mjs --full    # 12-pass check on every preset (slower)
 
 Uses Playwright from /opt/node-tools/node_modules and Chromium at /opt/pw-browsers/chromium (override with PLAYWRIGHT_MODULES / CHROMIUM); no npm install. Exits non-zero on failure.
-SwiftShader cannot reproduce Apple GPU faults: a pass shows the app's own logic is sound and guards against regressions, not that iOS is fixed. The cell detector lives in block-detector.mjs.
+SwiftShader cannot reproduce Apple GPU faults: a pass shows the app's own logic is sound and guards against regressions, not that iOS is fixed. The cell detector lives in block-detector.mjs; harness.mjs holds the browser, the static server and the check runner that both scripts share.
 
 # Mobile walkthrough
 
